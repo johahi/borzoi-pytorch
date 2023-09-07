@@ -10,7 +10,8 @@ We include a weight conversion script that ports Borzoi weights from TF-keras to
 
 ## Todo
 - [ ] Test the model on more sequences to ensure equivalence to the original implementation.  
-- [ ] Support reverse complement and shift augmentation  
+- [ ] Support reverse complement and shift augmentation.
+- [ ] Make model configurable, currently, almost everything is hardcoded. 
 - [ ] ...
 
 ## Misc.  
