@@ -1,5 +1,3 @@
-#Adapted from https://github.com/lucidrains/enformer-pytorch/tree/main
-#
 #MIT License
 #
 #Copyright (c) 2021 Phil Wang

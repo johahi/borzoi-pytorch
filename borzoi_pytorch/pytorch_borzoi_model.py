@@ -14,14 +14,12 @@
 # =========================================================================
 
 import torch.nn as nn
-from torch import nn, einsum
-from einops import rearrange, reduce
-from einops.layers.torch import Rearrange
+from torch import nn
 import torch
 import math
 
-from model.pytorch_borzoi_utils import *
-from model.pytorch_borzoi_transformer import *
+from .pytorch_borzoi_utils import *
+from .pytorch_borzoi_transformer import *
 
 
 #torch.backends.cudnn.deterministic = True
