@@ -12,3 +12,9 @@ We include a weight conversion script that ports Borzoi weights from TF-keras to
 - [ ] Test the model on more sequences to ensure equivalence to the original implementation.  
 - [ ] Support reverese complement and shift augmentation  
 - [ ] ...
+
+## References
+<a id="1">[1]</a> 
+Predicting RNA-seq coverage from DNA sequence as a unifying model of gene regulation  
+Johannes Linder, Divyanshi Srivastava, Han Yuan, Vikram Agarwal, David R. Kelley  
+bioRxiv 2023.08.30.555582; doi: [https://doi.org/10.1101/2023.08.30.555582](https://www.biorxiv.org/content/10.1101/2023.08.30.555582v1)
