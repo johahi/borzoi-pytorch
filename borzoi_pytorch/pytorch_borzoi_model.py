@@ -13,6 +13,10 @@
 # limitations under the License.
 # =========================================================================
 
+
+
+from borzoi_pytorch.config_borzoi import BorzoiConfig
+from transformers import PreTrainedModel
 import torch.nn as nn
 from torch import nn
 import torch
@@ -61,13 +65,18 @@ class ConvBlock(nn.Module):
         return x
 
     
-class Borzoi(nn.Module):
+class Borzoi(PreTrainedModel):
+    config_class = BorzoiConfig
+    base_model_prefix = "borzoi"
+
+    @staticmethod
+    def from_hparams(**kwargs):
+        return Borzoi(BorzoiConfig(**kwargs))
     
-    def __init__(self, checkpoint_path = None, enable_mouse_head = False):
-        #TODO support RC and augs, add gradient functions, and much more
-        #TODO rename layers to be understandable if I am feeling like adapting the state dict at some point
-        super(Borzoi, self).__init__()
-        self.enable_mouse_head = enable_mouse_head
+    
+    def __init__(self, config):
+        super(Borzoi, self).__init__(config)
+        self.enable_mouse_head = config.enable_mouse_head   
         self.conv_dna = ConvDna()
         self._max_pool = nn.MaxPool1d(kernel_size = 2, padding = 0)
         self.res_tower = nn.Sequential(
@@ -83,49 +92,52 @@ class Borzoi(nn.Module):
         )
         self.unet1 = nn.Sequential(
             self._max_pool,
-            ConvBlock(in_channels = 1280,out_channels = 1536,kernel_size = 5),
+            ConvBlock(in_channels = 1280,out_channels = config.dim,kernel_size = 5),
         )
         transformer = []
-        for _ in range(8):
+        for _ in range(config.depth):
             transformer.append(nn.Sequential(
                 Residual(nn.Sequential(
-                    nn.LayerNorm(1536, eps = 0.001),
+                    nn.LayerNorm(config.dim, eps = 0.001),
                     Attention(
-                        1536,
-                        heads = 8,
-                        dim_key = 64,
-                        dim_value = 192,
-                        dropout = 0.05,
-                        pos_dropout = 0.01,
+                        config.dim,
+                        heads = config.heads,
+                        dim_key = config.attn_dim_key,
+                        dim_value = config.attn_dim_value,
+                        dropout = config.attn_dropout,
+                        pos_dropout = config.pos_dropout,
                         num_rel_pos_features = 32
                     ),
                     nn.Dropout(0.2))
                 ),
                 Residual(nn.Sequential(
-                    nn.LayerNorm(1536, eps = 0.001),
-                    nn.Linear(1536, 1536 * 2),
-                    nn.Dropout(0.2),
+                    nn.LayerNorm(config.dim, eps = 0.001),
+                    nn.Linear(config.dim, config.dim * 2),
+                    nn.Dropout(config.dropout_rate),
                     nn.ReLU(),
-                    nn.Linear(1536 * 2, 1536),
-                    nn.Dropout(0.2)
+                    nn.Linear(config.dim * 2, config.dim),
+                    nn.Dropout(config.dropout_rate)
                 )))
             )
-        self.horizontal_conv0,self.horizontal_conv1 = ConvBlock(in_channels = 1280, out_channels = 1536, kernel_size = 1),ConvBlock(in_channels = 1536, out_channels = 1536,kernel_size = 1)
+        self.horizontal_conv0,self.horizontal_conv1 = ConvBlock(in_channels = 1280, out_channels = config.dim, kernel_size = 1),ConvBlock(in_channels = config.dim, out_channels = config.dim,kernel_size = 1)
         self.upsample = torch.nn.Upsample(scale_factor = 2)
         self.transformer = nn.Sequential(*transformer)
         self.upsampling_unet1 = nn.Sequential(
-            ConvBlock(in_channels = 1536, out_channels = 1536,  kernel_size = 1),
+            ConvBlock(in_channels = config.dim, out_channels = config.dim,  kernel_size = 1),
             self.upsample,
         )
-        self.separable1 = ConvBlock(in_channels = 1536, out_channels = 1536,  kernel_size = 3, conv_type = 'separable')
+        self.separable1 = ConvBlock(in_channels = config.dim, out_channels = config.dim,  kernel_size = 3, conv_type = 'separable')
         self.upsampling_unet0 = nn.Sequential(
-            ConvBlock(in_channels = 1536,out_channels = 1536,kernel_size = 1),
+            ConvBlock(in_channels = config.dim,out_channels = config.dim,kernel_size = 1),
             self.upsample,
         )
-        self.separable0 = ConvBlock(in_channels = 1536, out_channels = 1536,  kernel_size = 3, conv_type = 'separable')
-        self.crop = TargetLengthCrop(16384-32)
+        self.separable0 = ConvBlock(in_channels = config.dim, out_channels = config.dim,  kernel_size = 3, conv_type = 'separable')
+        if config.return_center_bins_only:
+            self.crop = TargetLengthCrop(6144)
+        else:
+            self.crop = TargetLengthCrop(16384 - 32) # as in Borzoi     
         self.final_joined_convs = nn.Sequential(
-            ConvBlock(in_channels = 1536, out_channels = 1920, kernel_size = 1),
+            ConvBlock(in_channels = config.dim, out_channels = 1920, kernel_size = 1),
             nn.Dropout(0.1),
             nn.GELU(approximate='tanh'),
         )
@@ -133,8 +145,6 @@ class Borzoi(nn.Module):
         if self.enable_mouse_head:
             self.mouse_head = nn.Conv1d(in_channels = 1920, out_channels = 2608, kernel_size = 1)
         self.final_softplus = nn.Softplus()
-        if checkpoint_path is not None:
-            self.load_state_dict(torch.load(checkpoint_path))
         
     def forward(self, x):
         x = self.conv_dna(x)
