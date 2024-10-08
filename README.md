@@ -2,17 +2,19 @@
 The [Borzoi model](https://www.biorxiv.org/content/10.1101/2023.08.30.555582v1) from Calico, but ported to Pytorch! Original implementation and weights are [here](https://github.com/calico/borzoi).  
 We show that the Pytorch version produces the same predictions as the original implementation for all tested notebook examples.  
 
-We include a weight conversion script that ports Borzoi weights from TF-keras to Pytorch.
+## Pretrained Model
+
+Ported weights (with permission) are uploaded to <a href="https://huggingface.co/johahi/borzoi-replicate-0"> Huggingface</a>, the model (human head only for now) can be loaded with:
+
+```python
+from borzoi_pytorch.pytorch_borzoi_model import Borzoi
+borzoi = Borzoi.from_pretrained('johahi/borzoi-replicate-0')
+````
+
 
 ## Installation
 1. Clone the repo and `cd`
 2. `pip install -e .`
-
-## Todo
-- [ ] Test the model on more sequences to ensure equivalence to the original implementation.  
-- [ ] Support reverse complement and shift augmentation.
-- [ ] Make model configurable, currently, almost everything is hardcoded. 
-- [ ] ...
 
 ## Misc.  
 Enabling tf32 or bf16 and/or compiling with Pytorch 2.0 leads to a speed up (compared to the plain PT version).
