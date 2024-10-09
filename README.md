@@ -8,7 +8,7 @@ Ported weights (with permission) are uploaded to <a href="https://huggingface.co
 
 ```python
 from borzoi_pytorch.pytorch_borzoi_model import Borzoi
-borzoi = Borzoi.from_pretrained('johahi/borzoi-replicate-0')
+borzoi = Borzoi.from_pretrained('johahi/borzoi-replicate-0') # 'johahi/borzoi-replicate-[0-3]'
 ````
 
 
