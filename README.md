@@ -7,7 +7,7 @@ We show that the Pytorch version produces the same predictions as the original i
 Ported weights (with permission) are uploaded to <a href="https://huggingface.co/johahi/borzoi-replicate-0"> Huggingface</a>, the model (human head only for now) can be loaded with:
 
 ```python
-from borzoi_pytorch.pytorch_borzoi_model import Borzoi
+from borzoi_pytorch import Borzoi
 borzoi = Borzoi.from_pretrained('johahi/borzoi-replicate-0') # 'johahi/borzoi-replicate-[0-3]'
 ````
 
