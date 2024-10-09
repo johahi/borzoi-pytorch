@@ -14,5 +14,6 @@ setup(
         "numpy >= 1.14.2",
         "torch >= 2.1.0",
         "transformers >= 4.34.1",
+        "jupyter >= 1.0.0",
     ],
 )
