@@ -122,7 +122,6 @@ class Attention(nn.Module):
         positions = self.pos_dropout(self.positions)
         rel_k = self.to_rel_k(positions)
         rel_k = rearrange(rel_k, 'n (h d) -> h n d', h = h)
-        rel_logits = einsum('b h i d, h j d -> b h i j', q + self.rel_pos_bias, rel_k)
         rel_logits = fast_relative_shift(q + self.rel_pos_bias,rel_k.expand(q.shape[0],-1,-1,-1))
         logits = content_logits + rel_logits
         attn = logits.softmax(dim = -1)
