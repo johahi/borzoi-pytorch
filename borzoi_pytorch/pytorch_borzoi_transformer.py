@@ -136,3 +136,43 @@ def relative_shift(x):
     x = x[:, :, 1:, :]
     x = x.reshape(-1, h, t1, t2 - 1)
     return x[..., :((t2 + 1) // 2)]
+
+
+class FlashAttention(nn.Module):
+    def __init__(
+        self,
+        dim=1536,
+        heads = 8,
+        dropout = 0.15,
+        pos_dropout = 0.15, # Not used
+        rotary_emb_base = 20000.0,
+        rotary_emb_scale_base = None, 
+        ):
+        super().__init__()
+
+        from flash_attn.modules.mha import MHA
+        self.mha = MHA(
+            use_flash_attn=True,
+            embed_dim=dim,
+            num_heads = heads,
+            num_heads_kv = (heads//2),
+            qkv_proj_bias=True,#False,
+            out_proj_bias=True,
+            dropout=dropout,
+            softmax_scale=(dim/heads) ** -0.5,
+            causal=False,
+            rotary_emb_dim=128,
+            rotary_emb_base=rotary_emb_base,
+            rotary_emb_scale_base = rotary_emb_scale_base,
+            fused_bias_fc = False,
+        ) 
+
+        nn.init.kaiming_normal_(self.mha.Wqkv.weight, nonlinearity = 'relu')
+        nn.init.zeros_(self.mha.out_proj.weight)
+        nn.init.zeros_(self.mha.out_proj.bias)
+        nn.init.ones_(self.mha.Wqkv.bias)
+
+
+    def forward(self, x):
+        out = self.mha(x)
+        return out
