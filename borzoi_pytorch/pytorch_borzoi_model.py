@@ -165,7 +165,7 @@ class Borzoi(PreTrainedModel):
             module.bias.data.zero_()
 
 
-    def forward(self, x, is_human = True):
+    def forward(self, x, is_human = True, data_parallel_training = False):
         x = self.conv_dna(x)
         x_unet0 = self.res_tower(x)
         x_unet1 = self.unet1(x_unet0)
@@ -184,7 +184,7 @@ class Borzoi(PreTrainedModel):
         x = self.final_joined_convs(x.permute(0,2,1))
         # disable autocast for more precision in final layer
         with torch.cuda.amp.autocast(enabled=False):
-            if isinstance(self, nn.parallel.DistributedDataParallel):
+            if data_parallel_training:
                 # we need this to get gradients for both heads if doing DDP training
                 if is_human:
                     human_out = self.final_softplus(self.human_head(x.float())) + 0 * self.mouse_head(x.float()).sum()
