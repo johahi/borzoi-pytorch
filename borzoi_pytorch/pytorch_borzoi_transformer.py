@@ -60,6 +60,11 @@ def get_positional_embed(seq_len, feature_size, device):
     embeddings = torch.cat((embeddings, torch.sign(distances)[..., None] * embeddings), dim = -1)
     return embeddings
 
+def fast_relative_shift(a,b):
+    return einsum("i d, j d -> i j", a, b).flatten().as_strided(size =(a.shape[0],a.shape[0]), stride= ((a.shape[0]-1)*2,1), storage_offset = a.shape[0] - 1)
+
+fast_relative_shift= torch.vmap(torch.vmap(fast_relative_shift))
+
 
 class Attention(nn.Module):
     
@@ -117,8 +122,7 @@ class Attention(nn.Module):
         positions = self.pos_dropout(self.positions)
         rel_k = self.to_rel_k(positions)
         rel_k = rearrange(rel_k, 'n (h d) -> h n d', h = h)
-        rel_logits = einsum('b h i d, h j d -> b h i j', q + self.rel_pos_bias, rel_k)
-        rel_logits = relative_shift(rel_logits)
+        rel_logits = fast_relative_shift(q + self.rel_pos_bias,rel_k.expand(q.shape[0],-1,-1,-1))
         logits = content_logits + rel_logits
         attn = logits.softmax(dim = -1)
         attn = self.attn_dropout(attn)
@@ -128,16 +132,6 @@ class Attention(nn.Module):
         out = self.to_out(out)
         return out
     
-def relative_shift(x):
-    to_pad = torch.zeros_like(x[..., :1])
-    x = torch.cat((to_pad, x), dim = -1)
-    _, h, t1, t2 = x.shape
-    x = x.reshape(-1, h, t2, t1)
-    x = x[:, :, 1:, :]
-    x = x.reshape(-1, h, t1, t2 - 1)
-    return x[..., :((t2 + 1) // 2)]
-
-
 class FlashAttention(nn.Module):
     def __init__(
         self,
