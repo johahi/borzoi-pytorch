@@ -18,12 +18,11 @@
 from borzoi_pytorch.config_borzoi import BorzoiConfig
 from transformers import PreTrainedModel
 import torch.nn as nn
-from torch import nn
 import torch
 import math
 
-from .pytorch_borzoi_utils import *
-from .pytorch_borzoi_transformer import *
+from .pytorch_borzoi_utils import Residual, TargetLengthCrop 
+from .pytorch_borzoi_transformer import Attention, FlashAttention
 
 
 #torch.backends.cudnn.deterministic = True
@@ -76,6 +75,7 @@ class Borzoi(PreTrainedModel):
     
     def __init__(self, config):
         super(Borzoi, self).__init__(config)
+        self.flashed = config.flashed if "flashed" in config.__dict__.keys() else False
         self.enable_mouse_head = config.enable_mouse_head   
         self.conv_dna = ConvDna()
         self._max_pool = nn.MaxPool1d(kernel_size = 2, padding = 0)
@@ -107,6 +107,12 @@ class Borzoi(PreTrainedModel):
                         dropout = config.attn_dropout,
                         pos_dropout = config.pos_dropout,
                         num_rel_pos_features = 32
+                    ) if not self.flashed else
+                    FlashAttention(
+                        config.dim,
+                        heads = config.heads,
+                        dropout = config.attn_dropout,
+                        pos_dropout = config.pos_dropout,
                     ),
                     nn.Dropout(0.2))
                 ),
@@ -145,8 +151,21 @@ class Borzoi(PreTrainedModel):
         if self.enable_mouse_head:
             self.mouse_head = nn.Conv1d(in_channels = 1920, out_channels = 2608, kernel_size = 1)
         self.final_softplus = nn.Softplus()
-        
-    def forward(self, x):
+
+
+    def _init_weights(self, module):
+        """ Initialize the weights """
+        if isinstance(module, (nn.Linear, nn.Embedding, nn.Conv1d)):
+            # module.weight.data.normal_(mean=0.0, std=0.02)
+            nn.init.xavier_normal_(module.weight)
+        elif isinstance(module, (nn.LayerNorm, nn.BatchNorm1d)):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        if isinstance(module, (nn.Linear, nn.Conv1d)) and module.bias is not None:
+            module.bias.data.zero_()
+
+
+    def forward(self, x, is_human = True):
         x = self.conv_dna(x)
         x_unet0 = self.res_tower(x)
         x_unet1 = self.unet1(x_unet0)
@@ -163,10 +182,18 @@ class Borzoi(PreTrainedModel):
         x = self.separable0(x)
         x = self.crop(x.permute(0,2,1))
         x = self.final_joined_convs(x.permute(0,2,1))
-        human_out = self.final_softplus(self.human_head(x))
-        if self.enable_mouse_head:
-            mouse_out = self.final_softplus(self.mouse_head(x))
-            return human_out, mouse_out
-        else:
-            return human_out
-        
+        # disable autocast for more precision in final layer
+        with torch.cuda.amp.autocast(enabled=False):
+            if isinstance(self, nn.parallel.DistributedDataParallel):
+                # we need this to get gradients for both heads if doing DDP training
+                if is_human:
+                    human_out = self.final_softplus(self.human_head(x.float())) + 0 * self.mouse_head(x.float()).sum()
+                    return human_out
+                else:
+                    mouse_out = self.final_softplus(self.mouse_head(x.float())) + 0 * self.human_head(x.float()).sum()
+                    return mouse_out
+            else:
+                if is_human:
+                    return self.final_softplus(self.human_head(x.float()))
+                else:
+                    return self.final_softplus(self.mouse_head(x.float()))
