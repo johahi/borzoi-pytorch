@@ -27,3 +27,6 @@ bioRxiv 2023.08.30.555582; doi: [https://doi.org/10.1101/2023.08.30.555582](http
 <a id="2">[2]</a> 
 [enformer-pytorch github](https://github.com/lucidrains/enformer-pytorch/),
 Phil Wang *lucidrains*
+
+## Citation
+Please cite this repository if you used borzoi-pytorch.
