@@ -19,6 +19,7 @@ from borzoi_pytorch.config_borzoi import BorzoiConfig
 from transformers import PreTrainedModel
 import torch.nn as nn
 import torch
+import numpy as np
 import math
 
 from .pytorch_borzoi_utils import Residual, TargetLengthCrop 
@@ -164,8 +165,7 @@ class Borzoi(PreTrainedModel):
         if isinstance(module, (nn.Linear, nn.Conv1d)) and module.bias is not None:
             module.bias.data.zero_()
 
-
-    def forward(self, x, is_human = True, data_parallel_training = False):
+    def get_embs_after_crop(self, x):
         x = self.conv_dna(x)
         x_unet0 = self.res_tower(x)
         x_unet1 = self.unet1(x_unet0)
@@ -181,7 +181,28 @@ class Borzoi(PreTrainedModel):
         x += x_unet0
         x = self.separable0(x)
         x = self.crop(x.permute(0,2,1))
-        x = self.final_joined_convs(x.permute(0,2,1))
+        return x.permute(0,2,1)
+
+    def predict_gene_slices(self, seqs, gene_slices):
+        # Calculate slice offsets
+        slice_list = []
+        slice_length = []
+        offset = 6144 if self.config.return_center_bins_only else 16384 - 32
+        for i,gene_slice in enumerate(gene_slices):
+            slice_list.extend(list(np.array(gene_slice) + i* offset))
+            slice_length.append(len(gene_slice))
+        # Get embedding after cropped 
+        seq_embs = self.get_embs_after_crop(seqs)
+        seq_embs = seq_embs.reshape(1,1536, -1)[:,:,slice_list]
+        seq_embs = self.final_joined_convs(seq_embs)
+        with torch.cuda.amp.autocast(enabled = False):
+            conved_slices = self.final_softplus(self.human_head(seq_embs.float()))
+        return [x for x in torch.split(conved_slices, slice_length, dim = 2)]
+
+
+    def forward(self, x, is_human = True, data_parallel_training = False):
+        x = self.get_embs_after_crop(x)
+        x = self.final_joined_convs(x)
         # disable autocast for more precision in final layer
         with torch.cuda.amp.autocast(enabled=False):
             if data_parallel_training:
