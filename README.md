@@ -13,11 +13,11 @@ borzoi = Borzoi.from_pretrained('johahi/borzoi-replicate-0') # 'johahi/borzoi-re
 
 
 ## Installation
-1. Clone the repo and `cd`
-2. `pip install -e .`
+`pip install git+https://github.com/johahi/borzoi-pytorch.git`
 
-## Misc.  
-Enabling tf32 or bf16 and/or compiling with Pytorch 2.0 leads to a speed up (compared to the plain PT version).
+## Misc.
+Documentation coming soon. 
+The relative shift operation should be faster than in enformer_pytorch or other implementations. 
 
 ## References
 <a id="1">[1]</a> 

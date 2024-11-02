@@ -3,8 +3,8 @@ from setuptools import setup
 setup(
     name='borzoi-pytorch',
     version='0.2.1',
-    author='',
-    author_email='',
+    author='Johannes Hingerl',
+    author_email='johannes.hingerl@tum.de',
     packages=['borzoi_pytorch'],
     url='https://github.com/johahi/borzoi-pytorch',
     license='LICENSE',
