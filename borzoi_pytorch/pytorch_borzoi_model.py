@@ -22,6 +22,7 @@ import torch
 import numpy as np
 import math
 import copy
+from pathlib import Path
 
 from .pytorch_borzoi_utils import Residual, TargetLengthCrop, undo_squashed_scale
 from .pytorch_borzoi_transformer import Attention, FlashAttention
