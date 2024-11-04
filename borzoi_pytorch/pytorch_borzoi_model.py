@@ -23,9 +23,12 @@ import numpy as np
 import math
 import copy
 
-from .pytorch_borzoi_utils import Residual, TargetLengthCrop, undo_squashed_scale 
+from .pytorch_borzoi_utils import Residual, TargetLengthCrop, undo_squashed_scale
 from .pytorch_borzoi_transformer import Attention, FlashAttention
 
+import pandas as pd
+DIR = Path(__file__).parents[0]
+TRACKS_DF = pd.read_table(str(DIR / "precomputed"/ "targets.txt")).rename(columns={'Unnamed: 0':'index'})
 
 #torch.backends.cudnn.deterministic = True
 
@@ -200,32 +203,38 @@ class Borzoi(PreTrainedModel):
         return x.permute(0,2,1)
 
     
-    def predict(self, seqs, gene_slices = None, remove_squashed_scale = False):
+    def predict(self, seqs, gene_slices, remove_squashed_scale = False):
         """
-        returns list or tuple of length batch_size of outputs, optionally only for bins overlapping gene_slices, or without squashed scale
+        Predicts only for bins of interest in a batched fashion
+        Args:
+            seqs (torch.tensor): Nx4xL tensor of one-hot sequences
+            gene_slices List[torch.Tensor]: tensors indicating bins of interest
+            removed_squashed_scale (bool, optional): whether to undo the squashed scale
+
+        Returns:
+            Tuple[torch.Tensor, list[int]]: 1xCxB tensor of bin predictions, as well as offsets that indicate where sequences begin/end
         """
-        if not gene_slices:
-            res = self(seqs)
-            if remove_squashed_scale:
-                res = undo_squashed_scale(res)
-            return torch.unbind(res, dim = 0)
-        else:
-            # Calculate slice offsets
-            slice_list = []
-            slice_length = []
-            offset = 6144 if self.config.return_center_bins_only else 16384 - 32
-            for i,gene_slice in enumerate(gene_slices):
-                slice_list.extend(list(np.array(gene_slice) + i* offset))
-                slice_length.append(len(gene_slice))
-            # Get embedding after cropped 
-            seq_embs = self.get_embs_after_crop(seqs)
-            seq_embs = seq_embs.reshape(1,1536, -1)[:,:,slice_list]
-            seq_embs = self.final_joined_convs(seq_embs)
-            with torch.cuda.amp.autocast(enabled = False):
-                conved_slices = self.final_softplus(self.human_head(seq_embs.float()))
-            if remove_squashed_scale:
-                conved_slices = undo_squashed_scale(conved_slices)
-            return [x[0] for x in torch.split(conved_slices, slice_length, dim = 2)]
+        # Calculate slice offsets
+        slice_list = []
+        slice_length = []
+        offset = self.crop.target_length
+        for i,gene_slice in enumerate(gene_slices):
+            slice_list.append(gene_slice + i*offset)
+            slice_length.append(gene_slice.shape[0])
+        slice_list = torch.concatenate(slice_list)
+        # Get embedding after cropped 
+        seq_embs = self.get_embs_after_crop(seqs)
+        # Reshape to flatten the batch dimension (i.e. concatenate sequences)
+        seq_embs = seq_embs.permute(1,0,2).flatten(start_dim=1).unsqueeze(0)
+        # Extract the bins of interest
+        seq_embs = seq_embs[:,:,slice_list]
+        # Run the model head
+        seq_embs = self.final_joined_convs(seq_embs)
+        with torch.cuda.amp.autocast(enabled = False):
+            conved_slices = self.final_softplus(self.human_head(seq_embs.float()))
+        if remove_squashed_scale:
+            conved_slices = undo_squashed_scale(conved_slices)
+        return conved_slices, slice_length
 
 
     def forward(self, x, is_human = True, data_parallel_training = False):
@@ -246,3 +255,86 @@ class Borzoi(PreTrainedModel):
                     return self.final_softplus(self.human_head(x.float()))
                 else:
                     return self.final_softplus(self.mouse_head(x.float()))
+
+
+class AnnotatedBorzoi(Borzoi):
+    
+    def __init__(self, config, tracks_df=TRACKS_DF):
+        super(AnnotatedBorzoi, self).__init__(config)
+        self._build_annotation_df(tracks_df)
+
+    def _build_annotation_df(self,tracks_df):
+        # build tensor of tracks (sense, antisense, unstranded)
+        self.sense_tracks = torch.tensor(tracks_df.loc[tracks_df.identifier.str.contains('\+') | (tracks_df.index == tracks_df['strand_pair'])].index)
+        self.antisense_tracks = torch.tensor(tracks_df.loc[tracks_df.identifier.str.endswith('-') | (tracks_df.index == tracks_df['strand_pair'])].index)
+        # check that ordering of sense and antisense is meaningful
+        assert ((tracks_df.iloc[self.antisense_tracks].description.array == tracks_df.iloc[self.sense_tracks].description.array).sum() == self.sense_tracks.shape[0])
+        # remember backing dataframe
+        self.tracks_df = tracks_df
+        self.output_tracks_df = tracks_df.loc[tracks_df.identifier.str.contains('\+') | (tracks_df.index == tracks_df['strand_pair'])].reset_index(drop=True)
+
+    def set_track_subset(self, track_subset):
+        if not hasattr(self, 'tracks_df_bak'):
+            tracks_df = self.tracks_df.copy()
+            self.tracks_df_bak = tracks_df
+        else:
+            tracks_df = self.tracks_df_bak.copy()
+        tracks_df = tracks_df.iloc[track_subset].reset_index(names='old_index')
+        # remap indices and strand pairs
+        oldidx_to_newidx = {x['old_index']:i for i,x in tracks_df.iterrows()}
+        try:
+            tracks_df["strand_pair"] = tracks_df['strand_pair'].apply(lambda x: oldidx_to_newidx[x])
+        except KeyError as e: 
+            raise Exception("Strand pair is missing")
+        # subset head
+        super().set_track_subset(track_subset)
+        # rebuild annotation
+        tracks_df = tracks_df.drop(columns='old_index')
+        self._build_annotation_df(tracks_df)
+
+    def reset_track_subset(self):
+        tracks_df = self.tracks_df_bak.copy()
+        super.reset_track_subset()
+        self._build_annotation_df(tracks_df)
+    
+    def _predict_gene_count(self, x, 
+                gene_slices, 
+                predict_antisense = False
+               ):
+        if predict_antisense:
+            # revcomp the input
+            x = x.flip(dims=(1,2))
+            # adapt the bins
+            gene_slices = [(self.crop.target_length - 1 - slices) for slices in gene_slices]
+        # run model
+        x, slice_length = self.predict(x, gene_slices = gene_slices)
+        if predict_antisense:
+            # extract the antisense and unstranded tracks
+            x = x[:,self.antisense_tracks,:]
+        else:
+            # extract the sense and unstranded tracks
+            x = x[:,self.sense_tracks,:]
+        return x, slice_length
+
+    def predict_gene_count(self, x, 
+                gene_slices = None, 
+                average_strands = True,
+                remove_squashed_scale = True,
+                agg_fn = lambda x: torch.sum(x, dim=-1),
+                log1p = True
+               ):
+        if gene_slices is None: # predict everything if no slices provided
+            gene_slices = [torch.tensor([x for x in range(self.crop.target_length)]) for i in range(x.shape[0])]
+        pred_sense, slice_length = self._predict_gene_count(x, gene_slices)
+        if average_strands:
+            pred_antisense, slice_length = self._predict_gene_count(x, gene_slices, predict_antisense = True)
+            pred = (pred_sense + pred_antisense)/2
+        else:
+            pred = pred_sense
+        # sum, unsquash and log1p-transform
+        if remove_squashed_scale:
+            pred = undo_squashed_scale(pred)
+        pred = torch.stack([agg_fn(x[0]) for x in torch.split(pred, slice_length, dim = 2)])
+        if log1p:
+            pred = torch.log1p(pred)
+        return pred
