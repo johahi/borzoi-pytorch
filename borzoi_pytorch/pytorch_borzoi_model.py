@@ -297,7 +297,7 @@ class AnnotatedBorzoi(Borzoi):
         super.reset_track_subset()
         self._build_annotation_df(tracks_df)
     
-    def _predict_gene_coverage(self, x, 
+    def _predict_gene_count(self, x, 
                 gene_slices, 
                 predict_antisense = False
                ):
@@ -316,7 +316,7 @@ class AnnotatedBorzoi(Borzoi):
             x = x[:,self.sense_tracks,:]
         return x, slice_length
 
-    def predict_gene_coverage(self, x, 
+    def predict_gene_count(self, x, 
                 gene_slices = None, 
                 average_strands = True,
                 remove_squashed_scale = True,
@@ -325,9 +325,9 @@ class AnnotatedBorzoi(Borzoi):
                ):
         if gene_slices is None: # predict everything if no slices provided
             gene_slices = [torch.tensor([x for x in range(self.crop.target_length)]) for i in range(x.shape[0])]
-        pred_sense, slice_length = self._predict_gene_coverage(x, gene_slices)
+        pred_sense, slice_length = self._predict_gene_count(x, gene_slices)
         if average_strands:
-            pred_antisense, slice_length = self._predict_gene_coverage(x, gene_slices, predict_antisense = True)
+            pred_antisense, slice_length = self._predict_gene_count(x, gene_slices, predict_antisense = True)
             pred = (pred_sense + pred_antisense)/2
         else:
             pred = pred_sense
@@ -336,5 +336,5 @@ class AnnotatedBorzoi(Borzoi):
             pred = undo_squashed_scale(pred)
         pred = torch.stack([agg_fn(x[0]) for x in torch.split(pred, slice_length, dim = 2)])
         if log1p:
-            pred = torch.log(pred + 1)
+            pred = torch.log1p(pred)
         return pred
