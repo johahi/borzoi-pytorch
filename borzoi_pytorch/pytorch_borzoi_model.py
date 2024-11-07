@@ -273,6 +273,7 @@ class AnnotatedBorzoi(Borzoi):
         # remember backing dataframe
         self.tracks_df = tracks_df
         self.output_tracks_df = tracks_df.loc[tracks_df.identifier.str.contains('\+') | (tracks_df.index == tracks_df['strand_pair'])].reset_index(drop=True)
+        self.register_buffer('scale_values', torch.from_numpy(self.tracks_df.scale.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
 
     def set_track_subset(self, track_subset):
         if not hasattr(self, 'tracks_df_bak'):
@@ -317,10 +318,38 @@ class AnnotatedBorzoi(Borzoi):
             x = x[:,self.sense_tracks,:]
         return x, slice_length
 
+    def _undo_squashed_scale(self,x, clip_soft=384, track_transform=3 / 4, old_transform = True):
+        """
+        Reverses the squashed scaling transformation applied to the output profiles.
+    
+        Args:
+            x (torch.Tensor): The input tensor to be unsquashed.
+            clip_soft (float, optional): The soft clipping value. Defaults to 384.
+            track_transform (float, optional): The transformation factor. Defaults to 3/4.
+            track_scale (float, optional): The scale factor. Defaults to 0.01.
+    
+        Returns:
+            torch.Tensor: The unsquashed tensor.
+        """
+        x = x.clone()  # IMPORTANT BECAUSE OF IMPLACE OPERATIONS TO FOLLOW?
+
+        
+        if old_transform:
+            x = x / self.scale_values.expand_as(x)
+            unclip_mask = x > clip_soft
+            x[unclip_mask] = (x[unclip_mask] - clip_soft) ** 2 + clip_soft
+            x = x ** (1./track_transform)
+        else:
+            unclip_mask = x > clip_soft
+            x[unclip_mask] = (x[unclip_mask] - clip_soft+1) ** 2 + clip_soft -1
+            x = (x + 1) ** (1.0 / track_transform) - 1
+            x = x / self.scale_values.expand_as(x)
+        return x
+
     def predict_gene_count(self, x, 
                 gene_slices = None, 
                 average_strands = True,
-                bin_level_transform = lambda x: undo_squashed_scale(x),
+                bin_level_transform = None,
                 agg_fn = lambda x: torch.sum(x, dim=-1),
                 log1p = True
                ):
@@ -333,7 +362,10 @@ class AnnotatedBorzoi(Borzoi):
         else:
             pred = pred_sense
         # sum, unsquash and log1p-transform
-        pred = bin_level_transform(pred)
+        if bin_level_transform is None:
+            pred = self._undo_squashed_scale(pred)
+        else:
+            pred = bin_level_transform(pred)
         pred = torch.stack([agg_fn(x[0]) for x in torch.split(pred, slice_length, dim = 2)])
         if log1p:
             pred = torch.log1p(pred)
