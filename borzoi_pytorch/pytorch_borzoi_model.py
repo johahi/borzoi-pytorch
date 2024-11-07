@@ -320,6 +320,7 @@ class AnnotatedBorzoi(Borzoi):
     def predict_gene_count(self, x, 
                 gene_slices = None, 
                 average_strands = True,
+		scale=0.01,
                 remove_squashed_scale = True,
                 agg_fn = lambda x: torch.sum(x, dim=-1),
                 log1p = True
@@ -333,6 +334,8 @@ class AnnotatedBorzoi(Borzoi):
         else:
             pred = pred_sense
         # sum, unsquash and log1p-transform
+	if scale is not None:
+	    pred = pred*(1/scale)
         if remove_squashed_scale:
             pred = undo_squashed_scale(pred)
         pred = torch.stack([agg_fn(x[0]) for x in torch.split(pred, slice_length, dim = 2)])
