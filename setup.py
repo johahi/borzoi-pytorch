@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='borzoi-pytorch',
-    version='0.3.7',
+    version='0.3.8',
     author='Johannes Hingerl',
     author_email='johannes.hingerl@tum.de',
     packages=['borzoi_pytorch'],

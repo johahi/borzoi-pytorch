@@ -273,7 +273,7 @@ class AnnotatedBorzoi(Borzoi):
         # remember backing dataframe
         self.tracks_df = tracks_df
         self.output_tracks_df = tracks_df.loc[tracks_df.identifier.str.contains('\+') | (tracks_df.index == tracks_df['strand_pair'])].reset_index(drop=True)
-        self.register_buffer('scale_values', torch.from_numpy(self.tracks_df.scale.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
+        self.register_buffer('scale_values', torch.from_numpy(self.output_tracks_df.scale.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
 
     def set_track_subset(self, track_subset):
         if not hasattr(self, 'tracks_df_bak'):
