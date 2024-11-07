@@ -65,7 +65,7 @@ def undo_squashed_scale(x, clip_soft=384, track_transform=3 / 4):
     Returns:
         torch.Tensor: The unsquashed tensor.
     """
-    # x = x.clone()  # IMPORTANT BECAUSE OF IMPLACE OPERATIONS TO FOLLOW?
+    x = x.clone()  # IMPORTANT BECAUSE OF IMPLACE OPERATIONS TO FOLLOW?
 
     # undo soft_clip
     unclip_mask = x > clip_soft
