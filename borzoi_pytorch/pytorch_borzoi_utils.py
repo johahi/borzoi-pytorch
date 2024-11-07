@@ -53,7 +53,7 @@ class TargetLengthCrop(nn.Module):
         return x[:, -trim:trim]
 
 
-def undo_squashed_scale(x, clip_soft=384, track_transform=3 / 4):
+def undo_squashed_scale(x, clip_soft=384, track_transform=3 / 4, track_scale = 0.01, old_transform = True):
     """
     Reverses the squashed scaling transformation applied to the output profiles.
 
@@ -61,16 +61,21 @@ def undo_squashed_scale(x, clip_soft=384, track_transform=3 / 4):
         x (torch.Tensor): The input tensor to be unsquashed.
         clip_soft (float, optional): The soft clipping value. Defaults to 384.
         track_transform (float, optional): The transformation factor. Defaults to 3/4.
+        track_scale (float, optional): The scale factor. Defaults to 0.01.
 
     Returns:
         torch.Tensor: The unsquashed tensor.
     """
     x = x.clone()  # IMPORTANT BECAUSE OF IMPLACE OPERATIONS TO FOLLOW?
-
-    # undo soft_clip
-    unclip_mask = x > clip_soft
-    x[unclip_mask] = (x[unclip_mask] - clip_soft) ** 2 + clip_soft
-
-    # undo sqrt
-    x = (x + 1) ** (1.0 / track_transform) - 1
+    
+    if old_transform:
+        x = x / track_scale
+        unclip_mask = x > clip_soft
+        x[unclip_mask] = (x[unclip_mask] - clip_soft) ** 2 + clip_soft
+        x = x ** (1./track_transform)
+    else:
+        unclip_mask = x > clip_soft
+        x[unclip_mask] = (x[unclip_mask] - clip_soft+1) ** 2 + clip_soft -1
+        x = (x + 1) ** (1.0 / track_transform) - 1
+        x = x / track_scale
     return x
