@@ -82,6 +82,7 @@ class Borzoi(PreTrainedModel):
     def __init__(self, config):
         super(Borzoi, self).__init__(config)
         self.flashed = config.flashed if "flashed" in config.__dict__.keys() else False
+        self.enable_human_head = config.enable_human_head if "enable_human_head" in config.__dict__.keys() else True
         self.enable_mouse_head = config.enable_mouse_head   
         self.conv_dna = ConvDna()
         self._max_pool = nn.MaxPool1d(kernel_size = 2, padding = 0)
@@ -153,7 +154,8 @@ class Borzoi(PreTrainedModel):
             nn.Dropout(0.1),
             nn.GELU(approximate='tanh'),
         )
-        self.human_head = nn.Conv1d(in_channels = 1920, out_channels = 7611, kernel_size = 1)
+        if self.enable_human_head:
+            self.human_head = nn.Conv1d(in_channels = 1920, out_channels = 7611, kernel_size = 1)
         if self.enable_mouse_head:
             self.mouse_head = nn.Conv1d(in_channels = 1920, out_channels = 2608, kernel_size = 1)
         self.final_softplus = nn.Softplus()
