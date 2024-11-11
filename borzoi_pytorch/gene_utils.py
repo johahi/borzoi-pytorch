@@ -185,8 +185,8 @@ class Gene:
 class Transcriptome:
     def __init__(self, gtf_file, use_geneid=False):
         self.genes = {}
-        self.read_gtf(gtf_file)
         self.use_geneid = use_geneid
+        self.read_gtf(gtf_file)
 
     def read_gtf(self, gtf_file):
         if gtf_file[-3:] == ".gz":
