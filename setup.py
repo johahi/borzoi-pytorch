@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='borzoi-pytorch',
-    version='0.3.9',
+    version='0.3.10',
     author='Johannes Hingerl',
     author_email='johannes.hingerl@tum.de',
     packages=['borzoi_pytorch'],
@@ -17,6 +17,7 @@ setup(
         "torch >= 2.1.0",
         "transformers >= 4.34.1",
         "jupyter >= 1.0.0",
+	"intervaltree~=3.1.0",
 	"pandas",
         #"flash-attn >= 2.6.3",
     ],
