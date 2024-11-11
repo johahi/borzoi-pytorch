@@ -183,7 +183,7 @@ class Gene:
 
 
 class Transcriptome:
-    def __init__(self, gtf_file):
+    def __init__(self, gtf_file, use_geneid=False):
         self.genes = {}
         self.read_gtf(gtf_file)
 
@@ -206,14 +206,11 @@ class Transcriptome:
                 end = int(a[4])
                 strand = a[6]
                 kv = gtf_kv(a[8])
-                gene_id = kv["gene_id"]
-                gene_name = None
-                if 'gene_name' in kv:
-                    gene_name = kv['gene_name']
+                gene_id = kv["gene_name"] if not self.use_geneid else kv["gene_id"]
 
                 # initialize gene
                 if gene_id not in self.genes:
-                    self.genes[gene_id] = Gene(chrom, strand, kv, gene_name)
+                    self.genes[gene_id] = Gene(chrom, strand, kv)
 
                 # add exon
                 self.genes[gene_id].add_exon(start - 1, end)
