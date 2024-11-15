@@ -264,6 +264,8 @@ class AnnotatedBorzoi(Borzoi):
     
     def __init__(self, config, tracks_df=TRACKS_DF):
         super(AnnotatedBorzoi, self).__init__(config)
+        assert all(x in tracks_df.columns for x in ['identifier', 'file', 'clip', 'clip_soft', 'scale', 'sum_stat', 'strand_pair', 'description'])
+        tracks_df['track_transform'] = track_df['sum_stat'].apply(lambda x: 3/4 if x == "sum_sqrt" else 1.)
         self._build_annotation_df(tracks_df)
 
     def _build_annotation_df(self,tracks_df):
@@ -276,6 +278,8 @@ class AnnotatedBorzoi(Borzoi):
         self.tracks_df = tracks_df
         self.output_tracks_df = tracks_df.loc[tracks_df.identifier.str.contains('\+') | (tracks_df.index == tracks_df['strand_pair'])].reset_index(drop=True)
         self.register_buffer('scale_values', torch.from_numpy(self.output_tracks_df.scale.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
+        self.register_buffer('clip_values', torch.from_numpy(self.output_tracks_df.clip_soft.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
+        self.register_buffer('track_transform', torch.from_numpy(self.output_tracks_df.clip_soft.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
 
     def set_track_subset(self, track_subset):
         if not hasattr(self, 'tracks_df_bak'):
@@ -320,24 +324,28 @@ class AnnotatedBorzoi(Borzoi):
             x = x[:,self.sense_tracks,:]
         return x, slice_length
 
-    def _undo_squashed_scale(self,x, clip_soft=384, track_transform=3 / 4, old_transform = True):
+    def _undo_squashed_scale(self,x, old_transform = True, unscale = True):
         """
         Reverses the squashed scaling transformation applied to the output profiles.
+        Uses the annotation df to supply information how this should be done.
     
         Args:
             x (torch.Tensor): The input tensor to be unsquashed.
-            clip_soft (float, optional): The soft clipping value. Defaults to 384.
-            track_transform (float, optional): The transformation factor. Defaults to 3/4.
-            track_scale (float, optional): The scale factor. Defaults to 0.01.
-    
+            old_transform: Which version of the transform to use
         Returns:
             torch.Tensor: The unsquashed tensor.
         """
         x = x.clone()  # IMPORTANT BECAUSE OF IMPLACE OPERATIONS TO FOLLOW?
 
+        clip_soft = self.clip_soft.expand_as(x)
+        track_transform = self.track_transform.expand_as(x)
+        if unscale:
+            scale = self.scale_values.expand_as(x)
+        else:
+            scale = 1.
         
         if old_transform:
-            x = x / self.scale_values.expand_as(x)
+            x = x / scale
             unclip_mask = x > clip_soft
             x[unclip_mask] = (x[unclip_mask] - clip_soft) ** 2 + clip_soft
             x = x ** (1./track_transform)
@@ -345,7 +353,7 @@ class AnnotatedBorzoi(Borzoi):
             unclip_mask = x > clip_soft
             x[unclip_mask] = (x[unclip_mask] - clip_soft+1) ** 2 + clip_soft -1
             x = (x + 1) ** (1.0 / track_transform) - 1
-            x = x / self.scale_values.expand_as(x)
+            x = x / scale
         return x
 
     def predict_gene_count(self, x, 
