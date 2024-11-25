@@ -265,7 +265,7 @@ class AnnotatedBorzoi(Borzoi):
     def __init__(self, config, tracks_df=TRACKS_DF):
         super(AnnotatedBorzoi, self).__init__(config)
         assert all(x in tracks_df.columns for x in ['identifier', 'file', 'clip', 'clip_soft', 'scale', 'sum_stat', 'strand_pair', 'description'])
-        tracks_df['track_transform'] = track_df['sum_stat'].apply(lambda x: 3/4 if x == "sum_sqrt" else 1.)
+        tracks_df['track_transform'] = tracks_df['sum_stat'].apply(lambda x: 3/4 if x == "sum_sqrt" else 1.)
         self._build_annotation_df(tracks_df)
 
     def _build_annotation_df(self,tracks_df):
@@ -279,7 +279,7 @@ class AnnotatedBorzoi(Borzoi):
         self.output_tracks_df = tracks_df.loc[tracks_df.identifier.str.contains('\+') | (tracks_df.index == tracks_df['strand_pair'])].reset_index(drop=True)
         self.register_buffer('scale_values', torch.from_numpy(self.output_tracks_df.scale.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
         self.register_buffer('clip_values', torch.from_numpy(self.output_tracks_df.clip_soft.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
-        self.register_buffer('track_transform', torch.from_numpy(self.output_tracks_df.clip_soft.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
+        self.register_buffer('track_transform', torch.from_numpy(self.output_tracks_df.track_transform.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
 
     def set_track_subset(self, track_subset):
         if not hasattr(self, 'tracks_df_bak'):
@@ -337,7 +337,7 @@ class AnnotatedBorzoi(Borzoi):
         """
         x = x.clone()  # IMPORTANT BECAUSE OF IMPLACE OPERATIONS TO FOLLOW?
 
-        clip_soft = self.clip_soft.expand_as(x)
+        clip_soft = self.clip_values.expand_as(x)
         track_transform = self.track_transform.expand_as(x)
         if unscale:
             scale = self.scale_values.expand_as(x)
@@ -347,11 +347,11 @@ class AnnotatedBorzoi(Borzoi):
         if old_transform:
             x = x / scale
             unclip_mask = x > clip_soft
-            x[unclip_mask] = (x[unclip_mask] - clip_soft) ** 2 + clip_soft
+            x[unclip_mask] = (x[unclip_mask] - clip_soft[unclip_mask]) ** 2 + clip_soft[unclip_mask]
             x = x ** (1./track_transform)
         else:
             unclip_mask = x > clip_soft
-            x[unclip_mask] = (x[unclip_mask] - clip_soft+1) ** 2 + clip_soft -1
+            x[unclip_mask] = (x[unclip_mask] - clip_soft[unclip_mask] + 1) ** 2 + clip_soft[unclip_mask] -1
             x = (x + 1) ** (1.0 / track_transform) - 1
             x = x / scale
         return x
