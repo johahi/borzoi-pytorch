@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='borzoi-pytorch',
-    version='0.4.0'
+    version='0.4.0',
     author='Johannes Hingerl',
     author_email='johannes.hingerl@tum.de',
     packages=['borzoi_pytorch'],
@@ -14,7 +14,7 @@ setup(
     install_requires=[
         "einops >= 0.5",
         "numpy >= 1.14.2",
-        "torch >= 2.3.0",
+        "torch >= 2.1.0",
         "transformers >= 4.34.1",
         "jupyter >= 1.0.0",
 	"intervaltree~=3.1.0",
