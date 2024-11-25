@@ -14,11 +14,11 @@ setup(
     install_requires=[
         "einops >= 0.5",
         "numpy >= 1.14.2",
-        "torch >= 2.1.0",
+        "torch >= 2.3.0",
         "transformers >= 4.34.1",
         "jupyter >= 1.0.0",
 	"intervaltree~=3.1.0",
 	"pandas",
-        #"flash-attn >= 2.6.3",
+        "flash-attn >= 2.6.3; extra == 'flash'"
     ],
 )
