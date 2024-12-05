@@ -2,7 +2,7 @@
 #
 #MIT License
 #
-#Copyright (c) 2021 Phil Wang
+#Copyright (c) 2021 Phil Wang, 2024 Johannes Hingerl
 
 #Permission is hereby granted, free of charge, to any person obtaining a copy
 #of this software and associated documentation files (the "Software"), to deal
@@ -63,7 +63,7 @@ def get_positional_embed(seq_len, feature_size, device):
 def fast_relative_shift(a,b):
     return einsum("i d, j d -> i j", a, b).flatten().as_strided(size =(a.shape[0],a.shape[0]), stride= ((a.shape[0]-1)*2,1), storage_offset = a.shape[0] - 1)
 
-fast_relative_shift= torch.vmap(torch.vmap(fast_relative_shift))
+fast_relative_shift= torch.vmap(torch.vmap(fast_relative_shift), in_dims=(0, None)) #https://johahi.github.io/blog/2024/fast-relative-shift/
 
 
 class Attention(nn.Module):
@@ -122,7 +122,7 @@ class Attention(nn.Module):
         positions = self.pos_dropout(self.positions)
         rel_k = self.to_rel_k(positions)
         rel_k = rearrange(rel_k, 'n (h d) -> h n d', h = h)
-        rel_logits = fast_relative_shift(q + self.rel_pos_bias,rel_k.expand(q.shape[0],-1,-1,-1))
+        rel_logits = fast_relative_shift(q + self.rel_pos_bias,rel_k)
         logits = content_logits + rel_logits
         attn = logits.softmax(dim = -1)
         attn = self.attn_dropout(attn)
