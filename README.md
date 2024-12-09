@@ -4,7 +4,7 @@ We show that the Pytorch version produces the same predictions as the original i
 
 ## Pretrained Model
 
-Ported weights (with permission) are uploaded to <a href="https://huggingface.co/johahi"> Huggingface</a>, the model (human or mouse heads) can be loaded with:
+Ported weights (with permission) are uploaded to [huggingface](https://huggingface.co/johahi), the model (human or mouse heads) can be loaded with:
 
 ```python
 from borzoi_pytorch import Borzoi
@@ -17,7 +17,7 @@ borzoi = Borzoi.from_pretrained('johahi/borzoi-replicate-0') # 'johahi/borzoi-re
 
 ## Misc.
 Documentation coming soon. 
-The relative shift operation should be faster than in enformer_pytorch or other implementations. 
+The relative shift operation should be [faster](https://johahi.github.io/blog/2024/fast-relative-shift/) than in enformer_pytorch or other implementations. 
 
 ## References
 <a id="1">[1]</a> 
