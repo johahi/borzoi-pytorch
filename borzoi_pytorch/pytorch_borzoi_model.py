@@ -174,6 +174,15 @@ class Borzoi(PreTrainedModel):
 
     
     def set_track_subset(self, track_subset):
+        """
+        Creates a subset of tracks by reassigning weights in the human head.
+
+        Args:
+           track_subset: Indices of the tracks to keep.
+        
+        Returns:
+            None
+        """
         if not hasattr(self, 'human_head_bak'):
             self.human_head_bak = copy.deepcopy(self.human_head)
         else:
@@ -184,10 +193,25 @@ class Borzoi(PreTrainedModel):
 
     
     def reset_track_subset(self):
+        """
+        Resets the human head to the original weights.
+        
+        Returns:
+            None
+        """
         self.human_head = copy.deepcopy(self.human_head_bak)
 
     
     def get_embs_after_crop(self, x):
+        """
+        Performs the forward pass of the model until right before the final conv layers, and includes a cropping layer.
+
+        Args:
+            x (torch.Tensor): Input DNA sequence tensor of shape (N, 4, L).
+
+        Returns:
+             torch.Tensor: Output of the model up to the cropping layer with shape (N, dim, crop_length)
+        """
         x = self.conv_dna(x)
         x_unet0 = self.res_tower(x)
         x_unet1 = self.unet1(x_unet0)
@@ -241,6 +265,17 @@ class Borzoi(PreTrainedModel):
 
 
     def forward(self, x, is_human = True, data_parallel_training = False):
+        """
+        Performs the forward pass of the model.
+
+        Args:
+            x (torch.Tensor): Input DNA sequence tensor of shape (N, 4, L).
+            is_human (bool, optional): If True, use the human head; otherwise, use the mouse head. Defaults to True.
+            data_parallel_training (bool, optional): If True, perform forward pass specific to DDP. Defaults to False.
+
+        Returns:
+            torch.Tensor: Output tensor with shape (N, C, L), where C is the number of tracks.
+        """
         x = self.get_embs_after_crop(x)
         x = self.final_joined_convs(x)
         # disable autocast for more precision in final layer
@@ -263,12 +298,31 @@ class Borzoi(PreTrainedModel):
 class AnnotatedBorzoi(Borzoi):
     
     def __init__(self, config, tracks_df=TRACKS_DF):
+        """
+        Initializes the `AnnotatedBorzoi` model.
+
+        Args:
+            config (BorzoiConfig): Configuration object containing model hyperparameters.
+            tracks_df (pd.DataFrame, optional): DataFrame containing track annotations. Defaults to the original targets.txt from Borzoi.
+        
+        Returns:
+            None
+        """
         super(AnnotatedBorzoi, self).__init__(config)
         assert all(x in tracks_df.columns for x in ['identifier', 'file', 'clip', 'clip_soft', 'scale', 'sum_stat', 'strand_pair', 'description'])
         tracks_df['track_transform'] = tracks_df['sum_stat'].apply(lambda x: 3/4 if x == "sum_sqrt" else 1.)
         self._build_annotation_df(tracks_df)
 
     def _build_annotation_df(self,tracks_df):
+        """
+        Builds the annotation tensors for sense and antisense, stranded and unstranded.
+
+        Args:
+            tracks_df (pd.DataFrame): DataFrame containing track annotations.
+
+        Returns:
+            None
+        """
         # build tensor of tracks (sense, antisense, unstranded)
         self.sense_tracks = torch.tensor(tracks_df.loc[tracks_df.identifier.str.contains('\+') | (tracks_df.index == tracks_df['strand_pair'])].index)
         self.antisense_tracks = torch.tensor(tracks_df.loc[tracks_df.identifier.str.endswith('-') | (tracks_df.index == tracks_df['strand_pair'])].index)
@@ -309,6 +363,17 @@ class AnnotatedBorzoi(Borzoi):
                 gene_slices, 
                 predict_antisense = False
                ):
+        """
+        Predicts gene counts, optionally considering averaging over the antisense strand prediction.
+
+        Args:
+            x (torch.Tensor): Input DNA sequence tensor of shape (N, 4, L).
+            gene_slices (List[torch.Tensor]): List of tensors, each containing the slice indices (bins) to extract from the output sequence.
+            predict_antisense (bool, optional): If True, predict for the antisense strand. Defaults to False.
+
+        Returns:
+             Tuple[torch.Tensor, list[int]]: 1xCxB tensor of bin predictions, as well as offsets that indicate where sequences begin/end
+        """
         if predict_antisense:
             # revcomp the input
             x = x.flip(dims=(1,2))
@@ -363,6 +428,20 @@ class AnnotatedBorzoi(Borzoi):
                 agg_fn = lambda x: torch.sum(x, dim=-1),
                 log1p = True
                ):
+        """
+        Predicts gene counts.
+
+        Args:
+            x (torch.Tensor): Input DNA sequence tensor of shape (N, 4, L).
+            gene_slices (List[torch.Tensor], optional): List of tensors, each containing the slice indices to extract from the output sequence. If None, all slices are used. Defaults to None.
+            average_strands (bool, optional): If True, average predictions from the sense and antisense strands. Defaults to True.
+            bin_level_transform (function, optional): A transformation to apply at the bin level before aggregation. If None, the squashed scale transform is undone. Defaults to None
+            agg_fn (function, optional): Aggregation function (e.g. sum, mean) to use after squashed scale transform. Defaults to the sum over all bins.
+            log1p (bool, optional): If True, apply a log1p transformation to the final prediction. Defaults to True.
+
+        Returns:
+            torch.Tensor: Tensor of predicted gene counts with shape (N, C)
+        """
         if gene_slices is None: # predict everything if no slices provided
             gene_slices = [torch.tensor([x for x in range(self.crop.target_length)]) for i in range(x.shape[0])]
         pred_sense, slice_length = self._predict_gene_count(x, gene_slices)
