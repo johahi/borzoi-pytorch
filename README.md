@@ -1,5 +1,5 @@
 # borzoi-pytorch
-Pytorch implementation of the [Borzoi](https://www.biorxiv.org/content/10.1101/2023.08.30.555582v1) model from Calico, and [Flashzoi](https://www.biorxiv.org/content/10.1101/2024.12.18.629121v1), an up to 3x faster Borzoi enhancement! 
+Pytorch implementation of the [Borzoi](https://doi.org/10.1038/s41588-024-02053-6) model from Calico, and [Flashzoi](https://www.biorxiv.org/content/10.1101/2024.12.18.629121v1), an up to 3x faster Borzoi enhancement! 
 
 ## Installation
 borzoi-pytorch is available on PyPI and can be installed with
@@ -35,9 +35,7 @@ The relative shift operation should be [faster](https://johahi.github.io/blog/20
 ## References
 Original Borzoi implementation and weights are [here](https://github.com/calico/borzoi).  
 <a id="1">[1]</a> 
-Predicting RNA-seq coverage from DNA sequence as a unifying model of gene regulation  
-Johannes Linder, Divyanshi Srivastava, Han Yuan, Vikram Agarwal, David R. Kelley  
-bioRxiv 2023.08.30.555582; doi: [https://doi.org/10.1101/2023.08.30.555582](https://www.biorxiv.org/content/10.1101/2023.08.30.555582v1)  
+Linder, Johannes, et al. "Predicting RNA-seq coverage from DNA sequence as a unifying model of gene regulation." Nature Genetics (2025): 1-13; doi: [https://doi.org/10.1101/2023.08.30.555582](https://doi.org/10.1038/s41588-024-02053-6)  
 <a id="2">[2]</a> 
 Flashzoi: An enhanced Borzoi model for accelerated genomic analysis  
 Johannes C. Hingerl, Alexander Karollus, Julien Gagneur  
@@ -47,4 +45,4 @@ bioRxiv 2024.12.18.629121; doi: [https://doi.org/10.1101/2024.12.18.629121](http
 Phil Wang
 
 ## Citation
-Please cite the Borzoi preprint [1], along with Flashzoi [2], if you used this repository or the models.
+Please cite the Borzoi paper [1], along with Flashzoi [2], if you used this repository or the models.
