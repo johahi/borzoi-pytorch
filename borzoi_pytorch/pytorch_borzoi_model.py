@@ -146,7 +146,7 @@ class Borzoi(PreTrainedModel):
         )
         self.separable0 = ConvBlock(in_channels = config.dim, out_channels = config.dim,  kernel_size = 3, conv_type = 'separable')
         if config.return_center_bins_only:
-            self.crop = TargetLengthCrop(6144)
+            self.crop = TargetLengthCrop(config.bins_to_return)
         else:
             self.crop = TargetLengthCrop(16384 - 32) # as in Borzoi     
         self.final_joined_convs = nn.Sequential(

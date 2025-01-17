@@ -16,6 +16,7 @@ class BorzoiConfig(PretrainedConfig):
         attn_dropout = 0.05,
         pos_dropout = 0.01,
         enable_mouse_head = False,
+        bins_to_return = 6144,
         **kwargs,
     ):
         self.dim = dim
@@ -29,4 +30,5 @@ class BorzoiConfig(PretrainedConfig):
         self.pos_dropout = pos_dropout
         self.return_center_bins_only = return_center_bins_only
         self.enable_mouse_head = enable_mouse_head
+        self.bins_to_return = bins_to_return
         super().__init__(**kwargs)
