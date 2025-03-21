@@ -163,7 +163,14 @@ class Borzoi(PreTrainedModel):
         if hasattr(self,"count_mode"):
             if self.count_mode == 'TSS':
                 del self.crop
-                self.crop = lambda x: TargetLengthCrop(6144)(x)[:,[0]]
+                self.crop = lambda x: TargetLengthCrop(2)(x).mean(dim = 1, keepdim = True)
+                self.human_head = nn.Identity()
+                
+                # self.human_head = nn.Sequential(
+                #     nn.Flatten(1,2),
+                #     nn.Linear(3840,1920)
+                #     #nn.Conv1d(in_channels = 3840, out_channels = 1, kernel_size = 1)
+                # )
             
 
 
