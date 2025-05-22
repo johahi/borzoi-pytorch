@@ -1,0 +1,10 @@
+bed_file: bed_files/genes_tsscentred.bed # Path to bed file, TSS centred
+bs: 8 # Flashzoi default batch size for GPU with 48GB VRAM
+data_path: data_examples/gene_specific.tsv # Path to variant file
+fasta_file: genome_human.fa # Path to fasta file
+gtf_file: gencode.v32.annotation.sorted.gtf.gz # Path to gtf file
+pretrained_path: johahi/flashzoi-replicate-0 # model path
+return_center_bins_only: false # true, false
+span: false # true, false
+squashed_scale_mode: keep_track_scales # keep, keep_track_scales, None
+track_subset: RNA # RNA, CAGE

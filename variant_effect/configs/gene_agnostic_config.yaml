@@ -1,0 +1,10 @@
+bs: 4 # Flashzoi default batch size for GPU with 48GB VRAM
+data_path: data_examples/gene_agnostic.tsv # Path to variant file
+fasta_file: genome_human.fa # Path to fasta file
+gtf_file: gencode.v32.annotation.sorted.gtf.gz # Path to gtf file
+metric: logL2 # Metric: logL2, logfc, normed_max_abs_diff 
+prediction_bin_mode: all # all,  number of bins,  False
+pretrained_path: johahi/flashzoi-replicate-0 # model path
+return_center_bins_only: false
+squashed_scale_mode: keep_track_scales # keep, keep_track_scales, undo, None
+track_subset: all # all, RNA, DNASE, DNASE&ATAC
