@@ -15,18 +15,18 @@ from borzoi_pytorch import AnnotatedBorzoi, Transcriptome
 from borzoi_pytorch.config_borzoi import BorzoiConfig
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-in_path', type=str, required="True")
-parser.add_argument('-out_path', type=str, required="True")
-parser.add_argument('-config_path', type=str, required="True")
+parser.add_argument('--in_path', type=str, required="True")
+parser.add_argument('--out_dir', type=str, required="True")
+parser.add_argument('--config_path', type=str, required="True")
 args = parser.parse_args()
 
 in_path = args.in_path
-out_path = args.out_path
+out_dir = args.out_dir
 config_path = args.config_path
 
 # load and chunk
 # parse out indices
-out_dir = "/"+os.path.join(*out_path.split("/")[:-1])
+# out_dir = "/"+os.path.join(*out_path.split("/")[:-1])
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
 table = pd.read_table(in_path)
@@ -42,7 +42,6 @@ print(bed_file)
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 # get config params
-bs = config['bs']
 gtf_file = config['gtf_file']
 fasta_file = config['fasta_file']
 pretrained_path = config['pretrained_path']
@@ -64,7 +63,7 @@ if return_center_bins_only:
 else:
     bins = 16384 - 32
     offset = 512
-    cfg.return_center_bins_only = True #False
+    cfg.return_center_bins_only = False
 
 
 if prediction_bin_mode == 'all':
@@ -159,7 +158,6 @@ class VariantCentredDataset(Dataset):
         nuc = str_to_one_hot(rec[allele].item()).squeeze()
         varlen = len(rec[allele].item())
         if allele == 'column_4':
-            print (rec, nuc, seq[pos:pos+varlen], seq[pos-2:pos+varlen+2])
             assert torch.allclose(seq[pos:pos+varlen], nuc), str(idx) + ":" + str(seq[pos:pos+varlen])
         # if alt, compute offset, insert variant
         else:
@@ -205,7 +203,7 @@ borzoi.eval()
 borzoi.to(device)
 
 var_ds = VariantCentredDataset(bed_file, gtf_file, fasta_file)
-var_dl = DataLoader(var_ds,shuffle=False, batch_size=bs, num_workers=1, pin_memory=True)
+var_dl = DataLoader(var_ds,shuffle=False, batch_size=2, num_workers=1, pin_memory=True)
 
 # Run
 preds = []
@@ -231,7 +229,7 @@ elif metric == 'logL2':
 elif metric == 'logfc':
     metric_fn = logfc_metric
 else:
-    metric_fn = lambda ref,alt, # eps: alt - ref
+    metric_fn = lambda ref,alt: alt - ref
 
 with torch.inference_mode(), torch.autocast(device, enabled=not disable_autocast):
         for batch in tqdm.tqdm(var_dl, miniters=10):
@@ -254,4 +252,4 @@ adata = ad.AnnData(preds.numpy(),
                    obs=obs_frame,
                    var=borzoi.output_tracks_df.copy(),
                   )
-adata.write(out_path, compression="gzip")
+adata.write(f"{out_dir}/variants.h5ad", compression="gzip")

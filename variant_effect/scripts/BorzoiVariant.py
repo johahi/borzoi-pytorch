@@ -12,9 +12,9 @@ from borzoi_pytorch import AnnotatedBorzoi, Transcriptome
 from borzoi_pytorch.config_borzoi import BorzoiConfig
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-in_path', type=str, required="True")
-parser.add_argument('-out_dir', type=str, required="True")
-parser.add_argument('-config_path', type=str, required="True")
+parser.add_argument('--in_path', type=str, required="True")
+parser.add_argument('--out_dir', type=str, required="True")
+parser.add_argument('--config_path', type=str, required="True")
 args = parser.parse_args()
 
 in_path = args.in_path
@@ -24,7 +24,7 @@ config_path = args.config_path
 # load and chunk
 print("Load data")
 names = list(pd.read_csv(in_path, nrows=2, sep="\t").columns)
-dataset = pd.read_csv(in_path, names=names, sep="\t")
+dataset = pd.read_csv(in_path, names=names, sep="\t", skiprows=1)
 print("Loaded data")
 print(dataset.iloc[0])
 

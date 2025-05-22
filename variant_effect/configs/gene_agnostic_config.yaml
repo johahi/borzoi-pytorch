@@ -1,4 +1,3 @@
-bs: 4 # Flashzoi default batch size for GPU with 48GB VRAM
 data_path: data_examples/gene_agnostic.tsv # Path to variant file
 fasta_file: genome_human.fa # Path to fasta file
 gtf_file: gencode.v32.annotation.sorted.gtf.gz # Path to gtf file
