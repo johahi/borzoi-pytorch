@@ -257,7 +257,7 @@ class Borzoi(PreTrainedModel):
         seq_embs = seq_embs[:,:,slice_list]
         # Run the model head
         seq_embs = self.final_joined_convs(seq_embs)
-        with torch.cuda.amp.autocast(enabled = False):
+        with torch.amp.autocast('cuda', enabled = False):
             conved_slices = self.final_softplus(self.human_head(seq_embs.float()))
         if remove_squashed_scale:
             conved_slices = undo_squashed_scale(conved_slices)
@@ -279,7 +279,7 @@ class Borzoi(PreTrainedModel):
         x = self.get_embs_after_crop(x)
         x = self.final_joined_convs(x)
         # disable autocast for more precision in final layer
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast('cuda', enabled=False):
             if data_parallel_training:
                 # we need this to get gradients for both heads if doing DDP training
                 if is_human:
