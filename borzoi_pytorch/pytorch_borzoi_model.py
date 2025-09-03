@@ -264,7 +264,7 @@ class Borzoi(PreTrainedModel):
         return conved_slices, slice_length
 
 
-    def forward(self, x, is_human = True, data_parallel_training = False):
+    def forward(self, x, is_human = True, data_parallel_training = False, return_embeddings = False):
         """
         Performs the forward pass of the model.
 
@@ -283,16 +283,19 @@ class Borzoi(PreTrainedModel):
             if data_parallel_training:
                 # we need this to get gradients for both heads if doing DDP training
                 if is_human:
-                    human_out = self.final_softplus(self.human_head(x.float())) + 0 * self.mouse_head(x.float()).sum()
-                    return human_out
+                    out = self.final_softplus(self.human_head(x.float())) + 0 * self.mouse_head(x.float()).sum()
                 else:
-                    mouse_out = self.final_softplus(self.mouse_head(x.float())) + 0 * self.human_head(x.float()).sum()
-                    return mouse_out
+                    out = self.final_softplus(self.mouse_head(x.float())) + 0 * self.human_head(x.float()).sum()
             else:
                 if is_human:
-                    return self.final_softplus(self.human_head(x.float()))
+                    out = self.final_softplus(self.human_head(x.float()))
                 else:
-                    return self.final_softplus(self.mouse_head(x.float()))
+                    out = self.final_softplus(self.mouse_head(x.float()))
+			
+        if return_embeddings:
+            return out, x
+
+        return out
 
 
 class AnnotatedBorzoi(Borzoi):
