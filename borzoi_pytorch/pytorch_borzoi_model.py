@@ -462,3 +462,23 @@ class AnnotatedBorzoi(Borzoi):
         if log1p:
             pred = torch.log1p(pred)
         return pred
+    
+    def predict_lfc(self, x, y, gene_slices = None, average_strands = True, bin_level_transform = None, agg_fn = lambda x: torch.sum(x, dim = -1), log1p = True):
+        """
+        Predicts log fold changes between two sequences.
+
+        Args:
+            x (torch.Tensor): Input DNA sequence tensor of shape (N, 4, L) for condition 1.
+            y (torch.Tensor): Input DNA sequence tensor of shape (N, 4, L) for condition 2.
+            gene_slices (List[torch.Tensor], optional): List of tensors, each containing the slice indices to extract from the output sequence. If None, all slices are used. Defaults to None.
+            average_strands (bool, optional): If True, average predictions from the sense and antisense strands. Defaults to True.
+            bin_level_transform (function, optional): A transformation to apply at the bin level before aggregation. If None, the squashed scale transform is undone. Defaults to None
+            agg_fn (function, optional): Aggregation function (e.g. sum, mean) to use after squashed scale transform. Defaults to the sum over all bins.
+            log1p (bool, optional): If True, apply a log1p transformation to the final prediction. Defaults to True.
+
+        Returns:
+            torch.Tensor: Tensor of predicted log fold changes with shape (N, C)
+        """
+        pred_x = self.predict_gene_count(x, gene_slices = gene_slices, average_strands = average_strands, bin_level_transform = bin_level_transform, agg_fn = agg_fn, log1p = log1p)
+        pred_y = self.predict_gene_count(y, gene_slices = gene_slices, average_strands = average_strands, bin_level_transform = bin_level_transform, agg_fn = agg_fn, log1p = log1p)
+        return pred_y - pred_x

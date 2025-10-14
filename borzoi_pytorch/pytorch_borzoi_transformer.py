@@ -29,7 +29,9 @@ from einops import rearrange, reduce
 from einops.layers.torch import Rearrange
 import torch
 import math
-
+from torch.nn.functional import scaled_dot_product_attention
+from torch.nn.attention import SDPBackend, sdpa_kernel
+from .rotary import RotaryEmbedding
 
 def get_positional_features_central_mask(positions, features, seq_len):
     pow_rate = math.exp(math.log(seq_len + 1) / features)
@@ -131,7 +133,7 @@ class Attention(nn.Module):
         out = rearrange(out, 'b h n d -> b n (h d)')
         out = self.to_out(out)
         return out
-    
+   
 class FlashAttention(nn.Module):
     def __init__(
         self,
@@ -140,33 +142,40 @@ class FlashAttention(nn.Module):
         dropout = 0.15,
         pos_dropout = 0.15, # Not used
         rotary_emb_base = 20000.0,
-        rotary_emb_scale_base = None, 
+        gating = False
         ):
         super().__init__()
+        self.num_heads = heads
+        self.dim = dim
+        self.head_dim = dim // heads
+        self.dropout_p = dropout
+        self.rotary_emb = RotaryEmbedding(128, base = rotary_emb_base)
+        self.mha =  nn.ModuleDict()
+        self.mha['Wqkv'] = nn.Linear(dim, dim * 2 )
+        self.mha['out_proj'] = nn.Linear(dim, dim)
 
-        from flash_attn.modules.mha import MHA
-        self.mha = MHA(
-            use_flash_attn=True,
-            embed_dim=dim,
-            num_heads = heads,
-            num_heads_kv = (heads//2),
-            qkv_proj_bias=True,#False,
-            out_proj_bias=True,
-            dropout=dropout,
-            softmax_scale=(dim/heads) ** -0.5,
-            causal=False,
-            rotary_emb_dim=128,
-            rotary_emb_base=rotary_emb_base,
-            rotary_emb_scale_base = rotary_emb_scale_base,
-            fused_bias_fc = False,
-        ) 
-
-        nn.init.kaiming_normal_(self.mha.Wqkv.weight, nonlinearity = 'relu')
-        nn.init.zeros_(self.mha.out_proj.weight)
-        nn.init.zeros_(self.mha.out_proj.bias)
-        nn.init.ones_(self.mha.Wqkv.bias)
-
+        if gating:
+            gate = nn.Sequential(
+                nn.Linear(dim, dim),
+                nn.Sigmoid()
+            )
+            self.gate = gate
 
     def forward(self, x):
-        out = self.mha(x)
+        qkv = self.mha['Wqkv'](x)
+        q, kv = qkv[..., :self.dim,], qkv[..., self.dim :]
+
+        q = rearrange(q, "... (h d) -> ... h d", d=self.head_dim)
+        kv = rearrange(kv, "... (two hkv d) -> ... two hkv d", two=2, d=self.head_dim)
+
+        q, kv = self.rotary_emb(q, kv)
+        k, v = kv[:,:,0], kv[:,:,1]
+        k = k.permute(0,2,1,3)
+        v = v.permute(0,2,1,3)
+        q = q.permute(0,2,1,3)          
+
+        with sdpa_kernel(backends=[SDPBackend.FLASH_ATTENTION]):
+            out = scaled_dot_product_attention(q, k, v, enable_gqa=True, dropout_p=self.dropout_p if self.training else 0.0)
+        out = rearrange(out, 'b h n d -> b n (h d)')
+        out = self.mha['out_proj'](out * self.gate(x)) if hasattr(self, 'gate') else self.mha['out_proj'](out)
         return out
