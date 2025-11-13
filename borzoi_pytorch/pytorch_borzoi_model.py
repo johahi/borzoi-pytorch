@@ -23,7 +23,8 @@ import numpy as np
 import math
 import copy
 from pathlib import Path
-
+import torch.nn.functional as F
+torch._dynamo.config.capture_dynamic_output_shape_ops = True
 from .pytorch_borzoi_utils import Residual, TargetLengthCrop, undo_squashed_scale
 from .pytorch_borzoi_transformer import Attention, FlashAttention
 
@@ -39,15 +40,15 @@ class ConvDna(nn.Module):
     def __init__(self):
         super(ConvDna, self).__init__()
         self.conv_layer = nn.Conv1d(in_channels = 4,out_channels = 512, kernel_size = 15, padding="same")
-        self.max_pool = nn.MaxPool1d(kernel_size = 2, padding = 0)
 
     def forward(self, x):
-        return self.max_pool(self.conv_layer(x))
+        return F.max_pool1d(self.conv_layer(x), kernel_size = 2, padding = 0)
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels,out_channels=None, kernel_size=1,
-                 conv_type="standard"):
+                 conv_type="standard", pool=False):
         super(ConvBlock, self).__init__()
+        self.pool = pool
         if conv_type == "separable":
             self.norm = nn.Identity()
             depthwise_conv = nn.Conv1d(in_channels, out_channels, kernel_size=kernel_size, groups=in_channels, padding = 'same', bias = False)
@@ -67,6 +68,8 @@ class ConvBlock(nn.Module):
         x = self.norm(x)
         x = self.activation(x)
         x = self.conv_layer(x)
+        if self.pool:
+            x = F.max_pool1d(x, kernel_size = 2, padding = 0)
         return x
 
     
@@ -87,18 +90,18 @@ class Borzoi(PreTrainedModel):
         self.conv_dna = ConvDna()
         self._max_pool = nn.MaxPool1d(kernel_size = 2, padding = 0)
         self.res_tower = nn.Sequential(
-            ConvBlock(in_channels = 512,out_channels = 608,kernel_size = 5),
-            self._max_pool,
-            ConvBlock(in_channels = 608,out_channels = 736,kernel_size = 5),
-            self._max_pool,
-            ConvBlock(in_channels = 736,out_channels = 896,kernel_size = 5),
-            self._max_pool,
-            ConvBlock(in_channels = 896,out_channels = 1056,kernel_size = 5),
-            self._max_pool,
+            ConvBlock(in_channels = 512,out_channels = 608,kernel_size = 5, pool = True),
+            nn.Identity(),
+            ConvBlock(in_channels = 608,out_channels = 736,kernel_size = 5, pool = True),
+            nn.Identity(),
+            ConvBlock(in_channels = 736,out_channels = 896,kernel_size = 5, pool = True),
+            nn.Identity(),
+            ConvBlock(in_channels = 896,out_channels = 1056,kernel_size = 5, pool = True),
+            nn.Identity(),
             ConvBlock(in_channels = 1056,out_channels = 1280,kernel_size = 5),
         )
         self.unet1 = nn.Sequential(
-            self._max_pool,
+            nn.Identity(),
             ConvBlock(in_channels = 1280,out_channels = config.dim,kernel_size = 5),
         )
         transformer = []
@@ -201,7 +204,7 @@ class Borzoi(PreTrainedModel):
         """
         self.human_head = copy.deepcopy(self.human_head_bak)
 
-    
+    @torch.compile(fullgraph=True, dynamic = False)
     def get_embs_after_crop(self, x):
         """
         Performs the forward pass of the model until right before the final conv layers, and includes a cropping layer.
@@ -214,7 +217,7 @@ class Borzoi(PreTrainedModel):
         """
         x = self.conv_dna(x)
         x_unet0 = self.res_tower(x)
-        x_unet1 = self.unet1(x_unet0)
+        x_unet1 = self.unet1(F.max_pool1d(x_unet0, kernel_size = 2, padding = 0))
         x = self._max_pool(x_unet1)
         x_unet1 = self.horizontal_conv1(x_unet1)
         x_unet0 = self.horizontal_conv0(x_unet0)
@@ -279,18 +282,22 @@ class Borzoi(PreTrainedModel):
         x = self.get_embs_after_crop(x)
         x = self.final_joined_convs(x)
         # disable autocast for more precision in final layer
-        with torch.amp.autocast('cuda', enabled=False):
-            if data_parallel_training:
-                # we need this to get gradients for both heads if doing DDP training
-                if is_human:
-                    out = self.final_softplus(self.human_head(x.float())) + 0 * self.mouse_head(x.float()).sum()
-                else:
-                    out = self.final_softplus(self.mouse_head(x.float())) + 0 * self.human_head(x.float()).sum()
-            else:
-                if is_human:
-                    out = self.final_softplus(self.human_head(x.float()))
-                else:
-                    out = self.final_softplus(self.mouse_head(x.float()))
+        if is_human:
+            out = self.final_softplus(self.human_head(x))
+        else:
+            out = self.final_softplus(self.mouse_head(x))
+        # with torch.amp.autocast('cuda', enabled=False):
+        #     if data_parallel_training:
+        #         # we need this to get gradients for both heads if doing DDP training
+        #         if is_human:
+        #             out = self.final_softplus(self.human_head(x.float())) + 0 * self.mouse_head(x.float()).sum()
+        #         else:
+        #             out = self.final_softplus(self.mouse_head(x.float())) + 0 * self.human_head(x.float()).sum()
+        #     else:
+        #         if is_human:
+        #             out = self.final_softplus(self.human_head(x.float()))
+        #         else:
+        #             out = self.final_softplus(self.mouse_head(x.float()))
 			
         if return_embeddings:
             return out, x
@@ -327,13 +334,13 @@ class AnnotatedBorzoi(Borzoi):
             None
         """
         # build tensor of tracks (sense, antisense, unstranded)
-        self.sense_tracks = torch.tensor(tracks_df.loc[tracks_df.identifier.str.contains('\+') | (tracks_df.index == tracks_df['strand_pair'])].index)
+        self.sense_tracks = torch.tensor(tracks_df.loc[tracks_df.identifier.str.contains(r'\+') | (tracks_df.index == tracks_df['strand_pair'])].index)
         self.antisense_tracks = torch.tensor(tracks_df.loc[tracks_df.identifier.str.endswith('-') | (tracks_df.index == tracks_df['strand_pair'])].index)
         # check that ordering of sense and antisense is meaningful
         assert ((tracks_df.iloc[self.antisense_tracks].description.array == tracks_df.iloc[self.sense_tracks].description.array).sum() == self.sense_tracks.shape[0])
         # remember backing dataframe
         self.tracks_df = tracks_df
-        self.output_tracks_df = tracks_df.loc[tracks_df.identifier.str.contains('\+') | (tracks_df.index == tracks_df['strand_pair'])].reset_index(drop=True)
+        self.output_tracks_df = tracks_df.loc[tracks_df.identifier.str.contains(r'\+') | (tracks_df.index == tracks_df['strand_pair'])].reset_index(drop=True)
         self.register_buffer('scale_values', torch.from_numpy(self.output_tracks_df.scale.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
         self.register_buffer('clip_values', torch.from_numpy(self.output_tracks_df.clip_soft.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
         self.register_buffer('track_transform', torch.from_numpy(self.output_tracks_df.track_transform.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
@@ -463,6 +470,8 @@ class AnnotatedBorzoi(Borzoi):
             pred = torch.log1p(pred)
         return pred
     
+
+    # @torch.compile(fullgraph=True, dynamic = True)
     def predict_lfc(self, x, y, gene_slices = None, average_strands = True, bin_level_transform = None, agg_fn = lambda x: torch.sum(x, dim = -1), log1p = True):
         """
         Predicts log fold changes between two sequences.

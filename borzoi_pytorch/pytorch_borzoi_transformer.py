@@ -161,6 +161,11 @@ class FlashAttention(nn.Module):
             )
             self.gate = gate
 
+    # @torch.compiler.disable()
+    def rotate_stuff(self, q, kv):
+        q, kv = self.rotary_emb(q, kv)
+        return q, kv
+
     def forward(self, x):
         qkv = self.mha['Wqkv'](x)
         q, kv = qkv[..., :self.dim,], qkv[..., self.dim :]
@@ -168,7 +173,7 @@ class FlashAttention(nn.Module):
         q = rearrange(q, "... (h d) -> ... h d", d=self.head_dim)
         kv = rearrange(kv, "... (two hkv d) -> ... two hkv d", two=2, d=self.head_dim)
 
-        q, kv = self.rotary_emb(q, kv)
+        q, kv = self.rotate_stuff (q,kv) #self.rotary_emb(q, kv)
         k, v = kv[:,:,0], kv[:,:,1]
         k = k.permute(0,2,1,3)
         v = v.permute(0,2,1,3)

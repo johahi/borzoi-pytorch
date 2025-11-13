@@ -35,22 +35,32 @@ class TargetLengthCrop(nn.Module):
     def __init__(self, target_length):
         super().__init__()
         self.target_length = target_length
-
+    
     def forward(self, x):
-        seq_len, target_len = x.shape[-2], self.target_length
+        target_len = self.target_length
+        
+        # Assuming target_len is always > 0 and valid at compile time
+        seq_len = x.shape[-2]
+        trim = (seq_len - target_len) // 2
+        
+        # Use slice without conditionals - torch.compile can optimize this
+        return x[:, trim:trim + target_len]
 
-        if target_len == -1:
-            return x
+    # def forward(self, x):
+    #     seq_len, target_len = x.shape[-2], self.target_length
 
-        if seq_len < target_len:
-            raise ValueError(f'sequence length {seq_len} is less than target length {target_len}')
+    #     if target_len == -1:
+    #         return x
 
-        trim = (target_len - seq_len) // 2
+    #     if seq_len < target_len:
+    #         raise ValueError(f'sequence length {seq_len} is less than target length {target_len}')
 
-        if trim == 0:
-            return x
+    #     trim = (target_len - seq_len) // 2
 
-        return x[:, -trim:trim]
+    #     if trim == 0:
+    #         return x
+
+    #     return x[:, -trim:trim]
 
 
 def undo_squashed_scale(x, clip_soft=384, track_transform=3 / 4, track_scale = 0.01, old_transform = True):
