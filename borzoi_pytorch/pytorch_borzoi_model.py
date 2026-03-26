@@ -368,13 +368,13 @@ class AnnotatedBorzoi(Borzoi):
             None
         """
         # build tensor of tracks (sense, antisense, unstranded)
-        self.sense_tracks = torch.tensor(tracks_df.loc[tracks_df.identifier.str.contains('\+') | (tracks_df.index == tracks_df['strand_pair'])].index)
+        self.sense_tracks = torch.tensor(tracks_df.loc[tracks_df.identifier.str.contains(r'\+') | (tracks_df.index == tracks_df['strand_pair'])].index)
         self.antisense_tracks = torch.tensor(tracks_df.loc[tracks_df.identifier.str.endswith('-') | (tracks_df.index == tracks_df['strand_pair'])].index)
         # check that ordering of sense and antisense is meaningful
         assert ((tracks_df.iloc[self.antisense_tracks].description.array == tracks_df.iloc[self.sense_tracks].description.array).sum() == self.sense_tracks.shape[0])
         # remember backing dataframe
         self.tracks_df = tracks_df
-        self.output_tracks_df = tracks_df.loc[tracks_df.identifier.str.contains('\+') | (tracks_df.index == tracks_df['strand_pair'])].reset_index(drop=True)
+        self.output_tracks_df = tracks_df.loc[tracks_df.identifier.str.contains(r'\+') | (tracks_df.index == tracks_df['strand_pair'])].reset_index(drop=True)
         self.register_buffer('scale_values', torch.from_numpy(self.output_tracks_df.scale.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
         self.register_buffer('clip_values', torch.from_numpy(self.output_tracks_df.clip_soft.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
         self.register_buffer('track_transform', torch.from_numpy(self.output_tracks_df.track_transform.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
