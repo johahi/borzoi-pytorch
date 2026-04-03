@@ -38,7 +38,7 @@ def get_positional_features_central_mask(positions, features, seq_len):
     return (center_widths[None, ...] > positions.abs()[..., None]).float()
 
 
-def get_positional_embed(seq_len, feature_size, device):
+def get_positional_embed(seq_len, seq_len_train, feature_size, device):
     distances = torch.arange(-seq_len + 1, seq_len, device = device)
 
     feature_functions = [
@@ -54,7 +54,7 @@ def get_positional_embed(seq_len, feature_size, device):
 
     embeddings = []
     for fn in feature_functions:
-        embeddings.append(fn(distances, num_basis_per_class, seq_len))
+        embeddings.append(fn(distances, num_basis_per_class, seq_len_train))
 
     embeddings = torch.cat(embeddings, dim = -1)
     embeddings = torch.cat((embeddings, torch.sign(distances)[..., None] * embeddings), dim = -1)
@@ -94,8 +94,9 @@ class Attention(nn.Module):
         # relative positional encoding
 
         self.num_rel_pos_features = num_rel_pos_features
-        
-        self.register_buffer("positions",get_positional_embed(4096, self.num_rel_pos_features, self.to_v.weight.device), persistent = False) # 4096 as this should always be the seq len at this pos?
+
+        self.positions = None
+        #self.register_buffer("positions",get_positional_embed(4096, 4096, self.num_rel_pos_features, self.to_v.weight.device), persistent = False) # 4096 as this should always be the seq len at this pos?
 
         self.to_rel_k = nn.Linear(num_rel_pos_features, dim_key * heads, bias = False)
         self.rel_content_bias = nn.Parameter(torch.randn(1, heads, 1, dim_key))
@@ -108,6 +109,9 @@ class Attention(nn.Module):
 
     def forward(self, x):
         n, h, device = x.shape[-2], self.heads, x.device
+        
+        if self.positions is None :
+            self.positions = get_positional_embed(n, 4096, self.num_rel_pos_features, self.to_v.weight.device)
         
         q = self.to_q(x)
         k = self.to_k(x)
