@@ -183,8 +183,9 @@ class Gene:
 
 
 class Transcriptome:
-    def __init__(self, gtf_file, use_geneid=False):
+    def __init__(self, gtf_file, use_transcripts=False, use_geneid=False):
         self.genes = {}
+        self.use_transcripts = use_transcripts
         self.use_geneid = use_geneid
         self.read_gtf(gtf_file)
 
@@ -208,6 +209,8 @@ class Transcriptome:
                 strand = a[6]
                 kv = gtf_kv(a[8])
                 gene_id = kv["gene_name"] if not self.use_geneid else kv["gene_id"]
+                if self.use_transcripts :
+                    gene_id = kv["transcript_name"] if not self.use_geneid else kv["transcript_id"]
 
                 # initialize gene
                 if gene_id not in self.genes:
@@ -230,19 +233,20 @@ def gtf_kv(s):
 
     a = s.split(";")
     for key_val in a:
-        if key_val.strip():
+        if key_val.strip() and key_val.strip() != "\"":
             eq_i = key_val.find("=")
             if eq_i != -1 and key_val[eq_i - 1] != '"':
                 kvs = key_val.split("=")
             else:
                 kvs = key_val.split()
 
-            key = kvs[0]
-            if kvs[1][0] == '"' and kvs[-1][-1] == '"':
-                val = (" ".join(kvs[1:]))[1:-1].strip()
-            else:
-                val = (" ".join(kvs[1:])).strip()
-
-            d[key] = val
+            if len(kvs) >= 2 :
+                key = kvs[0]
+                if kvs[1][0] == '"' and kvs[-1][-1] == '"':
+                    val = (" ".join(kvs[1:]))[1:-1].strip()
+                else:
+                    val = (" ".join(kvs[1:])).strip()
+    
+                d[key] = val
 
     return d
