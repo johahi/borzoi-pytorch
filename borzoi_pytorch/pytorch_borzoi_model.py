@@ -159,6 +159,7 @@ class Borzoi(PreTrainedModel):
         if self.enable_mouse_head:
             self.mouse_head = nn.Conv1d(in_channels = 1920, out_channels = 2608, kernel_size = 1)
         self.final_softplus = nn.Softplus()
+		self.post_init()
 
 
     def _init_weights(self, module):
