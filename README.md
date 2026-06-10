@@ -34,7 +34,7 @@ Ported weights (with permission) are uploaded to <a href="https://huggingface.co
 
 ```python
 from borzoi_pytorch import Prime
-borzoi = Prime.from_pretrained('johahi/borzoi-prime-replicate-0') # 'johahi/borzoi-prime-replicate-[0-3]'
+prime = Prime.from_pretrained('johahi/borzoi-prime-replicate-0') # 'johahi/borzoi-prime-replicate-[0-3]'
 ````
 The Pytorch version produces the same predictions as the original implementation, see for instance in this [notebook](https://github.com/johahi/borzoi-pytorch/blob/main/notebooks/pytorch_prime_example.ipynb).  
 
