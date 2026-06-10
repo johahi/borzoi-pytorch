@@ -15,7 +15,7 @@ setup(
         "einops >= 0.5",
         "numpy >= 1.14.2",
         "torch >= 2.1.0",
-        "transformers >= 4.34.1,<4.51.0",
+        "transformers >= 4.57.6,<5.0.0",
         "jupyter >= 1.0.0; extra == 'dev'",
 	"intervaltree~=3.1.0",
 	"pandas",
