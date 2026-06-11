@@ -34,6 +34,10 @@ TRACKS_DF = pd.read_table(str(DIR / "precomputed"/ "targets.txt")).rename(column
 #torch.backends.cudnn.deterministic = True
 
 #torch.set_float32_matmul_precision('high')
+
+# helper function
+def map_values(fn, d):
+    return {key: fn(values) for key, values in d.items()}
   
 class ConvDna(nn.Module):
     def __init__(self):
@@ -81,9 +85,7 @@ class Borzoi(PreTrainedModel):
     
     def __init__(self, config):
         super(Borzoi, self).__init__(config)
-        self.flashed = config.flashed if "flashed" in config.__dict__.keys() else False
-        self.enable_human_head = config.enable_human_head if "enable_human_head" in config.__dict__.keys() else True
-        self.enable_mouse_head = config.enable_mouse_head   
+        self.flashed = config.flashed if "flashed" in config.__dict__.keys() else False   
         self.conv_dna = ConvDna()
         self._max_pool = nn.MaxPool1d(kernel_size = 2, padding = 0)
         self.res_tower = nn.Sequential(
@@ -154,13 +156,28 @@ class Borzoi(PreTrainedModel):
             nn.Dropout(0.1),
             nn.GELU(approximate='tanh'),
         )
-        if self.enable_human_head:
-            self.human_head = nn.Conv1d(in_channels = 1920, out_channels = 7611, kernel_size = 1)
-        if self.enable_mouse_head:
-            self.mouse_head = nn.Conv1d(in_channels = 1920, out_channels = 2608, kernel_size = 1)
+        
+        # create output heads for different species
+        self.add_heads(**config.output_heads)
         self.final_softplus = nn.Softplus()
         self.post_init()
 
+    def add_heads(self, **kwargs):
+        """Add output heads for different species.
+        
+        Args:
+            **kwargs: Dictionary mapping species names to number of output tracks.
+        """
+        self.output_heads = kwargs
+        self._heads = nn.ModuleDict(map_values(
+            lambda features: nn.Conv1d(in_channels = 1920, out_channels = features, kernel_size = 1),
+            kwargs
+        ))
+
+    @property
+    def heads(self):
+        """Return the ModuleDict of output heads."""
+        return self._heads
 
     def _init_weights(self, module):
         """ Initialize the weights """
@@ -174,33 +191,46 @@ class Borzoi(PreTrainedModel):
             module.bias.data.zero_()
 
     
-    def set_track_subset(self, track_subset):
+    def set_track_subset(self, track_subset, head = 'human'):
         """
-        Creates a subset of tracks by reassigning weights in the human head.
+        Creates a subset of tracks by reassigning weights in the specified head.
 
         Args:
            track_subset: Indices of the tracks to keep.
+           head: Name of the species head to modify (default: 'human').
         
         Returns:
             None
         """
-        if not hasattr(self, 'human_head_bak'):
-            self.human_head_bak = copy.deepcopy(self.human_head)
+        assert head in self._heads, f'head {head} not found'
+        
+        backup_attr = f'_{head}_head_bak'
+        if not hasattr(self, backup_attr):
+            setattr(self, backup_attr, copy.deepcopy(self._heads[head]))
         else:
-            self.reset_track_subset()
-        self.human_head = nn.Conv1d(1920, len(track_subset), 1)
-        self.human_head.weight = nn.Parameter(self.human_head_bak.weight[track_subset].clone())
-        self.human_head.bias = nn.Parameter(self.human_head_bak.bias[track_subset].clone())
+            self.reset_track_subset(head=head)
+        
+        original_head = getattr(self, backup_attr)
+        self._heads[head] = nn.Conv1d(1920, len(track_subset), 1)
+        self._heads[head].weight = nn.Parameter(original_head.weight[track_subset].clone())
+        self._heads[head].bias = nn.Parameter(original_head.bias[track_subset].clone())
 
     
-    def reset_track_subset(self):
+    def reset_track_subset(self, head = 'human'):
         """
-        Resets the human head to the original weights.
+        Resets the specified head to the original weights.
+        
+        Args:
+            head: Name of the species head to reset (default: 'human').
         
         Returns:
             None
         """
-        self.human_head = copy.deepcopy(self.human_head_bak)
+        assert head in self._heads, f'head {head} not found'
+        
+        backup_attr = f'_{head}_head_bak'
+        if hasattr(self, backup_attr):
+            self._heads[head] = copy.deepcopy(getattr(self, backup_attr))
 
     
     def get_embs_after_crop(self, x):
@@ -231,17 +261,19 @@ class Borzoi(PreTrainedModel):
         return x.permute(0,2,1)
 
     
-    def predict(self, seqs, gene_slices, remove_squashed_scale = False):
+    def predict(self, seqs, gene_slices, remove_squashed_scale = False, head = 'human'):
         """
         Predicts only for bins of interest in a batched fashion
         Args:
             seqs (torch.tensor): Nx4xL tensor of one-hot sequences
             gene_slices List[torch.Tensor]: tensors indicating bins of interest
             removed_squashed_scale (bool, optional): whether to undo the squashed scale
+            head (str, optional): which species head to use for prediction (default: 'human')
 
         Returns:
             Tuple[torch.Tensor, list[int]]: 1xCxB tensor of bin predictions, as well as offsets that indicate where sequences begin/end
         """
+        assert head in self._heads, f'head {head} not found'
         # Calculate slice offsets
         slice_list = []
         slice_length = []
@@ -259,42 +291,51 @@ class Borzoi(PreTrainedModel):
         # Run the model head
         seq_embs = self.final_joined_convs(seq_embs)
         with torch.amp.autocast('cuda', enabled = False):
-            conved_slices = self.final_softplus(self.human_head(seq_embs.float()))
+            conved_slices = self.final_softplus(self._heads[head](seq_embs.float()))
         if remove_squashed_scale:
             conved_slices = undo_squashed_scale(conved_slices)
         return conved_slices, slice_length
 
 
-    def forward(self, x, is_human = True, data_parallel_training = False, return_embeddings = False):
+    def forward(self, x, head = 'human', return_all_heads = False, data_parallel_training = False, return_embeddings = False):
         """
         Performs the forward pass of the model.
 
         Args:
             x (torch.Tensor): Input DNA sequence tensor of shape (N, 4, L).
-            is_human (bool, optional): If True, use the human head; otherwise, use the mouse head. Defaults to True.
+            head (str, optional): Which species head to use. Defaults to 'human'. Ignored if return_all_heads is True.
+            return_all_heads (bool, optional): If True, return outputs for all heads as a dictionary. Defaults to False.
             data_parallel_training (bool, optional): If True, perform forward pass specific to DDP. Defaults to False.
+            return_embeddings (bool, optional): If True, also return the embeddings before the final heads.
 
         Returns:
-            torch.Tensor: Output tensor with shape (N, C, L), where C is the number of tracks.
+            torch.Tensor or dict: Output tensor with shape (N, C, L) where C is the number of tracks,
+                                  or dictionary mapping head names to output tensors if return_all_heads=True.
         """
         x = self.get_embs_after_crop(x)
-        x = self.final_joined_convs(x)
+        x_emb = self.final_joined_convs(x)
+        
         # disable autocast for more precision in final layer
         with torch.amp.autocast('cuda', enabled=False):
-            if data_parallel_training:
-                # we need this to get gradients for both heads if doing DDP training
-                if is_human:
-                    out = self.final_softplus(self.human_head(x.float())) + 0 * self.mouse_head(x.float()).sum()
-                else:
-                    out = self.final_softplus(self.mouse_head(x.float())) + 0 * self.human_head(x.float()).sum()
+            if return_all_heads:
+                # Return outputs for all heads
+                out = map_values(lambda head_module: self.final_softplus(head_module(x_emb.float())), self._heads)
+            elif data_parallel_training:
+                # For DDP training, we need gradients for all heads
+                # Compute all heads but only return the requested one
+                all_outputs = {name: self.final_softplus(head_module(x_emb.float())) 
+                              for name, head_module in self._heads.items()}
+                # Add epsilon * sum of other heads to ensure gradients flow
+                out = all_outputs[head]
+                for name, other_out in all_outputs.items():
+                    if name != head:
+                        out = out + 0 * other_out.sum()
             else:
-                if is_human:
-                    out = self.final_softplus(self.human_head(x.float()))
-                else:
-                    out = self.final_softplus(self.mouse_head(x.float()))
+                assert head in self._heads, f'head {head} not found'
+                out = self.final_softplus(self._heads[head](x_emb.float()))
 			
         if return_embeddings:
-            return out, x
+            return out, x_emb
 
         return out
 
@@ -575,7 +616,7 @@ class AnnotatedBorzoi(Borzoi):
         self.register_buffer('clip_values', torch.from_numpy(self.output_tracks_df.clip_soft.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
         self.register_buffer('track_transform', torch.from_numpy(self.output_tracks_df.track_transform.values).float().unsqueeze(0).unsqueeze(-1).to(self.conv_dna.conv_layer.weight.device), persistent=False)
 
-    def set_track_subset(self, track_subset):
+    def set_track_subset(self, track_subset, head = 'human'):
         if not hasattr(self, 'tracks_df_bak'):
             tracks_df = self.tracks_df.copy()
             self.tracks_df_bak = tracks_df
@@ -589,14 +630,14 @@ class AnnotatedBorzoi(Borzoi):
         except KeyError as e: 
             raise Exception("Strand pair is missing")
         # subset head
-        super().set_track_subset(track_subset)
+        super().set_track_subset(track_subset, head=head)
         # rebuild annotation
         tracks_df = tracks_df.drop(columns='old_index')
         self._build_annotation_df(tracks_df)
 
-    def reset_track_subset(self):
+    def reset_track_subset(self, head = 'human'):
         tracks_df = self.tracks_df_bak.copy()
-        super.reset_track_subset()
+        super().reset_track_subset(head=head)
         self._build_annotation_df(tracks_df)
     
     def _predict_gene_count(self, x, 
